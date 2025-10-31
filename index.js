@@ -187,7 +187,9 @@ app.post("/webhook", async (req, res) => {
   if (msgBody.toLowerCase().includes("menu")) {
     await sendImageMessage(
       from,
-      "https://i.imgur.com/9OOauYR_d.jpg",
+     // "https://i.imgur.com/9OOauYR_d.jpg",
+      "https://imgur.com/2TcH7d6_d.png",
+      
       "📋 *FoodBites Kitchen Menu* — Here’s what’s cooking today!"
     );
 

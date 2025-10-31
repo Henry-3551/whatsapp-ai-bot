@@ -188,7 +188,7 @@ app.post("/webhook", async (req, res) => {
     await sendImageMessage(
       from,
      // "https://i.imgur.com/9OOauYR_d.jpg",
-      "https://imgur.com/2TcH7d6_d.png",
+      "https://i.imgur.com/2TcH7d6_d.png?maxwidth=520&shape=thumb&fidelity=high",
       
       "📋 *FoodBites Kitchen Menu* — Here’s what’s cooking today!"
     );

@@ -5,14 +5,8 @@ import session from "express-session";
 import axios from "axios";
 import dotenv from "dotenv";
 import OpenAI from "openai";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(bodyParser.json());
@@ -22,7 +16,7 @@ app.use(
     secret: "henrify_secret_key_2025",
     resave: false,
     saveUninitialized: true,
-    cookie: { maxAge: 1000 * 60 * 20 },
+    cookie: { maxAge: 1000 * 60 * 20 }, // 20 minutes
   })
 );
 
@@ -46,7 +40,7 @@ const MENU = {
     { name: "Okra Soup & Eba", description: "Fresh okra soup with fish or beef", price: "₦2,500" },
     { name: "Pepper Soup (Goat / Catfish)", description: "Spicy broth with your choice of meat or fish", price: "₦2,500 / ₦3,000" },
     { name: "Native Jollof (Palm Oil Rice)", description: "Local-style rice with smoked fish, crayfish & scent leaf", price: "₦2,500" },
-  ],
+  ]
 };
 
 /* ---------- HELPERS ---------- */
@@ -137,45 +131,56 @@ app.post("/webhook", async (req, res) => {
     const message = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     const from = message?.from;
     const type = message?.type;
+    let msgBody =
+      message?.text?.body ||
+      message?.interactive?.button_reply?.title ||
+      "";
 
     if (!message || !from) {
-      console.log("⚠️ No message or sender found, skipping event.");
+      console.log("⚠️ No message or sender found, skipping.");
       return res.sendStatus(200);
     }
 
-    let msgBody = message?.text?.body || message?.interactive?.button_reply?.title || "";
-
-    // 🎧 Handle voice notes
+    /* 🎧 Handle voice notes */
     if (type === "audio") {
       console.log("🎧 Voice message detected — downloading...");
       const audioId = message.audio.id;
 
-      // Step 1: Get the media URL
-      const mediaUrlRes = await axios.get(
-        `https://graph.facebook.com/v21.0/${audioId}`,
-        { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
-      );
+      try {
+        const mediaUrlRes = await axios.get(`https://graph.facebook.com/v21.0/${audioId}`, {
+          headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+        });
+        const audioUrl = mediaUrlRes.data.url;
 
-      const audioUrl = mediaUrlRes.data.url;
+        const audioRes = await axios.get(audioUrl, {
+          headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+          responseType: "arraybuffer",
+        });
 
-      // Step 2: Download the audio file
-      const audioRes = await axios.get(audioUrl, {
-        headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
-        responseType: "arraybuffer",
-      });
-
-      const audioPath = path.join(__dirname, "voice_note.ogg");
-      fs.writeFileSync(audioPath, audioRes.data);
-
-      // Step 3: Transcribe with Whisper
-      const transcription = await openai.audio.transcriptions.create({
-        file: fs.createReadStream(audioPath),
-        model: "gpt-4o-mini-transcribe",
-      });
-
-      msgBody = transcription.text;
-      console.log(`🗣️ Transcribed voice: ${msgBody}`);
-      fs.unlinkSync(audioPath); // Clean up
+        // Try OpenAI Whisper first
+        try {
+          const transcription = await openai.audio.transcriptions.create({
+            file: new Blob([audioRes.data]),
+            model: "gpt-4o-mini-transcribe",
+          });
+          msgBody = transcription.text;
+          console.log(`🗣️ Transcribed (OpenAI): ${msgBody}`);
+        } catch (openaiErr) {
+          if (openaiErr.response?.status === 429) {
+            console.warn("⚠️ OpenAI quota exceeded — using fallback WhisperASR...");
+            const fallbackRes = await axios.post(
+              "https://api.whisper.asr.ai/v1/transcribe",
+              audioRes.data,
+              { headers: { "Content-Type": "audio/ogg" } }
+            );
+            msgBody = fallbackRes.data?.text || "";
+            console.log(`🗣️ Transcribed (Fallback): ${msgBody}`);
+          } else throw openaiErr;
+        }
+      } catch (err) {
+        console.error("❌ Voice transcription failed:", err.response?.data || err.message);
+        msgBody = "";
+      }
     }
 
     if (!msgBody) {
@@ -185,7 +190,7 @@ app.post("/webhook", async (req, res) => {
 
     console.log(`📩 [${from}] ${msgBody}`);
 
-    /* ---------- Handle greetings ---------- */
+    /* Greetings */
     if (["hi", "hello", "hey", "good morning", "good evening"].includes(msgBody.toLowerCase())) {
       await sendButtonMessage(from, "👋 Welcome to FoodBites Kitchen! How can we help you today?", [
         "📋 View Menu",
@@ -195,7 +200,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    /* ---------- Handle menu ---------- */
+    /* Menu */
     if (msgBody.toLowerCase().includes("menu")) {
       const formattedMenu = Object.entries(MENU)
         .map(([cat, items]) =>
@@ -208,7 +213,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    /* ---------- Handle orders ---------- */
+    /* Orders */
     const order = detectOrder(msgBody);
     if (order) {
       await sendMessage(
@@ -218,11 +223,10 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    /* ---------- Memory chat ---------- */
+    /* Memory + AI chat */
     if (!req.session.memory) req.session.memory = {};
     if (!req.session.memory[from])
-      req.session.memory[from] = { chat: [], intent: null, lastQuestion: null };
-
+      req.session.memory[from] = { chat: [], intent: null };
     const memory = req.session.memory[from];
 
     const completion = await openai.chat.completions.create({
@@ -231,10 +235,10 @@ app.post("/webhook", async (req, res) => {
         {
           role: "system",
           content: `
-You are *FoodBites Kitchen Customer Support Bot*, the official WhatsApp assistant for FoodBites Restaurants.
-Be friendly, helpful, and concise.
-Provide accurate responses about menu, delivery, and pricing.
-Avoid generic AI disclaimers.
+You are *FoodBites Kitchen Customer Support Bot*, a friendly WhatsApp assistant for FoodBites Restaurants.
+You help customers with menu options, delivery, pricing, and support.
+Always sound helpful, warm, and local (Nigerian English).
+If they ask for something unrelated, politely redirect to menu or delivery.
 Menu:
 ${JSON.stringify(MENU, null, 2)}
           `,
@@ -247,11 +251,10 @@ ${JSON.stringify(MENU, null, 2)}
     const reply = completion.choices[0].message.content.trim();
     memory.chat.push({ role: "user", content: msgBody });
     memory.chat.push({ role: "assistant", content: reply });
-
     await sendMessage(from, reply);
     res.sendStatus(200);
   } catch (err) {
-    console.error("❌ Webhook error:", err.message);
+    console.error("❌ Webhook error:", err.response?.data || err.message);
     res.sendStatus(500);
   }
 });

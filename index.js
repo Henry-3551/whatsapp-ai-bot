@@ -13,17 +13,6 @@ app.use(bodyParser.json());
 
 app.use(
   session({
-
-
-
-
-
-
-
-
-
-
-  
     secret: "henrify_secret_key_2025",
     resave: false,
     saveUninitialized: true,
@@ -133,35 +122,33 @@ async function sendButtonMessage(recipient, text, buttons) {
   } catch (err) {
     console.error("❌ Error sending button message:", err.response?.data || err.message);
   }
-// Image sending
-async function sendImageMessage(to, imageUrlOrId, caption = "") {
+  
+async function sendImageMessage(to, imageUrl, caption = "") {
+  if (!to || !imageUrl) return;
   try {
-    const payload = {
-      messaging_product: "whatsapp",
-      to,
-      type: "image",
-      image: imageUrlOrId.startsWith("http")
-        ? { link: imageUrlOrId, caption }
-        : { id: imageUrlOrId, caption },
-    };
-
     await axios.post(
       `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`,
-      payload,
+      {
+        messaging_product: "whatsapp",
+        to,
+        type: "image",
+        image: {
+          link: imageUrl,
+          caption,
+        },
+      },
       {
         headers: {
-          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
           "Content-Type": "application/json",
+          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
         },
       }
     );
-
-    console.log(`✅ Image menu sent to ${to}`);
+    console.log(`🖼️ Image message sent to ${to}`);
   } catch (err) {
-    console.error("❌ Error sending image menu:", err.response?.data || err.message);
+    console.error("❌ Error sending image message:", err.response?.data || err.message);
   }
 }
-  }
 
 
 /* ---------- WEBHOOK ---------- */

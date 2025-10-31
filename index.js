@@ -5,8 +5,14 @@ import session from "express-session";
 import axios from "axios";
 import dotenv from "dotenv";
 import OpenAI from "openai";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(bodyParser.json());
@@ -16,7 +22,7 @@ app.use(
     secret: "henrify_secret_key_2025",
     resave: false,
     saveUninitialized: true,
-    cookie: { maxAge: 1000 * 60 * 20 }, // 20 minutes session
+    cookie: { maxAge: 1000 * 60 * 20 },
   })
 );
 
@@ -40,7 +46,7 @@ const MENU = {
     { name: "Okra Soup & Eba", description: "Fresh okra soup with fish or beef", price: "₦2,500" },
     { name: "Pepper Soup (Goat / Catfish)", description: "Spicy broth with your choice of meat or fish", price: "₦2,500 / ₦3,000" },
     { name: "Native Jollof (Palm Oil Rice)", description: "Local-style rice with smoked fish, crayfish & scent leaf", price: "₦2,500" },
-  ]
+  ],
 };
 
 /* ---------- HELPERS ---------- */
@@ -127,32 +133,28 @@ async function sendButtonMessage(recipient, text, buttons) {
 
 /* ---------- WEBHOOK ---------- */
 app.post("/webhook", async (req, res) => {
-  const data = req.body;
-  const message = data.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-  const entry = req.body.entry?.[0];
-  const changes = entry?.changes?.[0];
-  const from = message?.from;
-  const type = message?.type;
-  const msgBody =
-    message?.text?.body ||
-    message?.interactive?.button_reply?.title ||
-    "";
+  try {
+    const message = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+    const from = message?.from;
+    const type = message?.type;
 
-  if (!message || !from || !msgBody) {
-    console.log("⚠️ No text message or sender found, skipping event.");
-    return res.sendStatus(200);
-  }
-  
+    if (!message || !from) {
+      console.log("⚠️ No message or sender found, skipping event.");
+      return res.sendStatus(200);
+    }
 
-   // 🎧 Handle voice notes
-    else if (type === "audio") {
+    let msgBody = message?.text?.body || message?.interactive?.button_reply?.title || "";
+
+    // 🎧 Handle voice notes
+    if (type === "audio") {
       console.log("🎧 Voice message detected — downloading...");
       const audioId = message.audio.id;
 
       // Step 1: Get the media URL
-      const mediaUrlRes = await axios.get(`https://graph.facebook.com/v21.0/${audioId}`, {
-        headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
-      });
+      const mediaUrlRes = await axios.get(
+        `https://graph.facebook.com/v21.0/${audioId}`,
+        { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
+      );
 
       const audioUrl = mediaUrlRes.data.url;
 
@@ -162,14 +164,18 @@ app.post("/webhook", async (req, res) => {
         responseType: "arraybuffer",
       });
 
+      const audioPath = path.join(__dirname, "voice_note.ogg");
+      fs.writeFileSync(audioPath, audioRes.data);
+
       // Step 3: Transcribe with Whisper
       const transcription = await openai.audio.transcriptions.create({
-        file: new Blob([audioRes.data]),
+        file: fs.createReadStream(audioPath),
         model: "gpt-4o-mini-transcribe",
       });
 
       msgBody = transcription.text;
       console.log(`🗣️ Transcribed voice: ${msgBody}`);
+      fs.unlinkSync(audioPath); // Clean up
     }
 
     if (!msgBody) {
@@ -179,100 +185,75 @@ app.post("/webhook", async (req, res) => {
 
     console.log(`📩 [${from}] ${msgBody}`);
 
-  if (["hi", "hello", "hey", "good morning", "good evening"].includes(msgBody.toLowerCase())) {
-    await sendButtonMessage(from, "👋 Welcome to FoodBites Kitchen! How can we help you today?", [
-      "📋 View Menu",
-      "🚚 Delivery Time",
-      "💰 Pricing",
-    ]);
-    return res.sendStatus(200);
-  }
+    /* ---------- Handle greetings ---------- */
+    if (["hi", "hello", "hey", "good morning", "good evening"].includes(msgBody.toLowerCase())) {
+      await sendButtonMessage(from, "👋 Welcome to FoodBites Kitchen! How can we help you today?", [
+        "📋 View Menu",
+        "🚚 Delivery Time",
+        "💰 Pricing",
+      ]);
+      return res.sendStatus(200);
+    }
 
-  if (msgBody.toLowerCase().includes("menu")) {
-    const formattedMenu = Object.entries(MENU)
-      .map(([cat, items]) =>
-        `🍽️ *${cat.toUpperCase()}*\n${items
-          .map((i) => `• ${i.name} – ${i.price}\n  _${i.description}_`)
-          .join("\n")}`
-      )
-      .join("\n\n");
-    await sendMessage(from, formattedMenu);
-    return res.sendStatus(200);
-  }
+    /* ---------- Handle menu ---------- */
+    if (msgBody.toLowerCase().includes("menu")) {
+      const formattedMenu = Object.entries(MENU)
+        .map(([cat, items]) =>
+          `🍽️ *${cat.toUpperCase()}*\n${items
+            .map((i) => `• ${i.name} – ${i.price}\n  _${i.description}_`)
+            .join("\n")}`
+        )
+        .join("\n\n");
+      await sendMessage(from, formattedMenu);
+      return res.sendStatus(200);
+    }
 
-  const order = detectOrder(msgBody);
-  if (order) {
-    await sendMessage(
-      from,
-      `🧾 *Order Summary:*\n${order.quantity} × ${order.name}\n💵 Unit: ₦${order.unitPrice.toLocaleString()}\n💰 Total: ₦${order.totalPrice.toLocaleString()}\nWould you like *pickup* or *delivery*?`
-    );
-    return res.sendStatus(200);
-  }
+    /* ---------- Handle orders ---------- */
+    const order = detectOrder(msgBody);
+    if (order) {
+      await sendMessage(
+        from,
+        `🧾 *Order Summary:*\n${order.quantity} × ${order.name}\n💵 Unit: ₦${order.unitPrice.toLocaleString()}\n💰 Total: ₦${order.totalPrice.toLocaleString()}\nWould you like *pickup* or *delivery*?`
+      );
+      return res.sendStatus(200);
+    }
 
-  // Memory for chat sessions
-  if (!req.session.memory) req.session.memory = {};
-  if (!req.session.memory[from])
-    req.session.memory[from] = { chat: [], intent: null, lastQuestion: null };
-  const memory = req.session.memory[from];
+    /* ---------- Memory chat ---------- */
+    if (!req.session.memory) req.session.memory = {};
+    if (!req.session.memory[from])
+      req.session.memory[from] = { chat: [], intent: null, lastQuestion: null };
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "system",
-        content: `
-You are *FoodBites Kitchen Customer Support Bot*, the official WhatsApp assistant for FoodBites Restaurants — a fast, reliable, and affordable food delivery service in Nigeria.  
-Your job is to help customers with questions about:
-- Menu options
-- Delivery times
-- Pricing
-- Business hours
-- Contact and support
+    const memory = req.session.memory[from];
 
-Details about the business:
-- Small package: ₦2,500
-- Medium package: ₦8,000
-- Large package: ₦20,000
-- Within city: 1–2 hours
-- Nearby cities: 3–5 hours
-- Nationwide: 24–72 hours
-- Pickup: free for orders over ₦10,000
-- Drop-off: free for orders over ₦15,000
-- Tracking: available via WhatsApp or website
-- Support hours: 8am–8pm daily
-- Support hours on Sunday: 2pm–8pm
-- Support hours on Monday: 9am–8pm
-- Support hours on Tuesday: 8am–8pm
-- Support hours on Wednesday: 8am–8pm
-- Support hours on Thursday: 8am–8pm
-- Support hours on Friday: 8am–8pm
-- Support hours on Saturday: 10am–8pm
-- Phone: 080-7237-8767
-- Tone: friendly, professional, reassuring
-Always give helpful, accurate responses *specific to FoodBites Stores* and avoid generic AI phrases.
-If a customer asks something unrelated, politely bring the focus back to deliveries or menu options.
-
-When users or customers mention ordering food, the system automatically detects and calculates totals.
-You only need to handle follow-ups (like confirming pickup/delivery, or giving cooking time).
-
-Never invent new dishes or prices.
-Always use a friendly, conversational Nigerian tone.
-Current intent: ${memory.intent || "general"}.
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `
+You are *FoodBites Kitchen Customer Support Bot*, the official WhatsApp assistant for FoodBites Restaurants.
+Be friendly, helpful, and concise.
+Provide accurate responses about menu, delivery, and pricing.
+Avoid generic AI disclaimers.
 Menu:
 ${JSON.stringify(MENU, null, 2)}
-        `,
-      },
-      ...memory.chat,
-      { role: "user", content: msgBody },
-    ],
-  });
+          `,
+        },
+        ...memory.chat,
+        { role: "user", content: msgBody },
+      ],
+    });
 
-  const reply = completion.choices[0].message.content.trim();
-  memory.chat.push({ role: "user", content: msgBody });
-  memory.chat.push({ role: "assistant", content: reply });
+    const reply = completion.choices[0].message.content.trim();
+    memory.chat.push({ role: "user", content: msgBody });
+    memory.chat.push({ role: "assistant", content: reply });
 
-  await sendMessage(from, reply);
-  res.sendStatus(200);
+    await sendMessage(from, reply);
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("❌ Webhook error:", err.message);
+    res.sendStatus(500);
+  }
 });
 
 /* ---------- VERIFY ---------- */

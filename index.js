@@ -127,10 +127,12 @@ async function sendButtonMessage(recipient, text, buttons) {
 
 /* ---------- WEBHOOK ---------- */
 app.post("/webhook", async (req, res) => {
+  const data = req.body;
+  const message = data.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
   const entry = req.body.entry?.[0];
   const changes = entry?.changes?.[0];
-  const message = changes?.value?.messages?.[0];
   const from = message?.from;
+  const type = message?.type;
   const msgBody =
     message?.text?.body ||
     message?.interactive?.button_reply?.title ||
@@ -140,8 +142,42 @@ app.post("/webhook", async (req, res) => {
     console.log("⚠️ No text message or sender found, skipping event.");
     return res.sendStatus(200);
   }
+  
 
-  console.log(`📩 [${from}] ${msgBody}`);
+   // 🎧 Handle voice notes
+    else if (type === "audio") {
+      console.log("🎧 Voice message detected — downloading...");
+      const audioId = message.audio.id;
+
+      // Step 1: Get the media URL
+      const mediaUrlRes = await axios.get(`https://graph.facebook.com/v21.0/${audioId}`, {
+        headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+      });
+
+      const audioUrl = mediaUrlRes.data.url;
+
+      // Step 2: Download the audio file
+      const audioRes = await axios.get(audioUrl, {
+        headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+        responseType: "arraybuffer",
+      });
+
+      // Step 3: Transcribe with Whisper
+      const transcription = await openai.audio.transcriptions.create({
+        file: new Blob([audioRes.data]),
+        model: "gpt-4o-mini-transcribe",
+      });
+
+      msgBody = transcription.text;
+      console.log(`🗣️ Transcribed voice: ${msgBody}`);
+    }
+
+    if (!msgBody) {
+      console.log("⚠️ No valid text/transcription found.");
+      return res.sendStatus(200);
+    }
+
+    console.log(`📩 [${from}] ${msgBody}`);
 
   if (["hi", "hello", "hey", "good morning", "good evening"].includes(msgBody.toLowerCase())) {
     await sendButtonMessage(from, "👋 Welcome to FoodBites Kitchen! How can we help you today?", [

@@ -122,33 +122,6 @@ async function sendButtonMessage(recipient, text, buttons) {
   } catch (err) {
     console.error("❌ Error sending button message:", err.response?.data || err.message);
   }
-  
-async function sendImageMessage(to, imageUrl, caption = "") {
-  if (!to || !imageUrl) return;
-  try {
-    await axios.post(
-      `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to,
-        type: "image",
-        image: {
-          link: imageUrl,
-          caption,
-        },
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-        },
-      }
-    );
-    console.log(`🖼️ Image message sent to ${to}`);
-  } catch (err) {
-    console.error("❌ Error sending image message:", err.response?.data || err.message);
-  }
-}
 
 
 /* ---------- WEBHOOK ---------- */
@@ -232,7 +205,7 @@ app.post("/webhook", async (req, res) => {
   if (msgBody.toLowerCase().includes("menu")) {
     await sendImageMessage(
     from,
-    "https://i.imgur.com/2TcH7d6_d.png", // or your uploaded media ID
+    "https://i.imgur.com/9OOauYR_d.jpg", // or your uploaded media ID
     "📋 *FoodBites Kitchen Menu* — Here’s what’s cooking today!"
   );
     

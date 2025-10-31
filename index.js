@@ -125,6 +125,35 @@ async function sendButtonMessage(recipient, text, buttons) {
   }
 }
 
+// Image sending
+async function sendImageMessage(to, imageUrlOrId, caption = "") {
+  try {
+    const payload = {
+      messaging_product: "whatsapp",
+      to,
+      type: "image",
+      image: imageUrlOrId.startsWith("http")
+        ? { link: https://i.imgur.com/2TcH7d6_d.png, FoodBites Kitchen Menu}
+        : { id: https://i.imgur.com/2TcH7d6_d.png, FoodBites Kitchen Menu },
+    };
+
+    await axios.post(
+      `https://graph.facebook.com/v21.0/${process.env.PHONE_NUMBER_ID}/messages`,
+      payload,
+      {
+        headers: {
+          "Authorization": `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    console.log(`✅ Image menu sent to ${to}`);
+  } catch (err) {
+    console.error("❌ Error sending image menu:", err.response?.data || err.message);
+  }
+      }
+
 /* ---------- WEBHOOK ---------- */
 app.post("/webhook", async (req, res) => {
   const data = req.body;
@@ -204,6 +233,12 @@ app.post("/webhook", async (req, res) => {
   }
 
   if (msgBody.toLowerCase().includes("menu")) {
+    await sendImageMessage(
+    from,
+    "https://i.imgur.com/2TcH7d6_d.png", // or your uploaded media ID
+    "📋 *FoodBites Kitchen Menu* — Here’s what’s cooking today!"
+  );
+    
     const formattedMenu = Object.entries(MENU)
       .map(([cat, items]) =>
         `🍽️ *${cat.toUpperCase()}*\n${items

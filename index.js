@@ -16,11 +16,10 @@ app.use(
     secret: "henrify_secret_key_2025",
     resave: false,
     saveUninitialized: true,
-    cookie: { maxAge: 1000 * 60 * 20 }, // 20 minutes
+    cookie: { maxAge: 1000 * 60 * 20 }, // 20 minutes session
   })
 );
 
-// env variables
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
@@ -128,136 +127,167 @@ async function sendButtonMessage(recipient, text, buttons) {
 
 /* ---------- WEBHOOK ---------- */
 app.post("/webhook", async (req, res) => {
-  try {
-    const message = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-    const from = message?.from;
-    const type = message?.type;
-    let msgBody =
-      message?.text?.body ||
-      message?.interactive?.button_reply?.title ||
-      "";
+  const data = req.body;
+  const message = data.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+  const entry = req.body.entry?.[0];
+  const changes = entry?.changes?.[0];
+  const from = message?.from;
+  const type = message?.type;
+  const msgBody =
+    message?.text?.body ||
+    message?.interactive?.button_reply?.title ||
+    "";
 
-    if (!message || !from) {
-      console.log("⚠️ No message or sender found, skipping.");
-      return res.sendStatus(200);
-    }
+  if (!message || !from || !msgBody) {
+    console.log("⚠️ No text message or sender found, skipping event.");
+    return res.sendStatus(200);
+  }
+  
 
-    /* 🎧 Handle voice notes */
-    if (type === "audio") {
-      console.log("🎧 Voice message detected — downloading...");
-      const audioId = message.audio.id;
+     // 🎧 Handle voice notes
+  else if (type === "audio") {
+    console.log("🎧 Voice message detected — downloading...");
+    const audioId = message.audio.id;
 
+    try {
+      // Step 1: Get the media URL
+      const mediaUrlRes = await axios.get(`https://graph.facebook.com/v21.0/${audioId}`, {
+        headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+      });
+
+      const audioUrl = mediaUrlRes.data.url;
+
+      // Step 2: Download the audio file as a Buffer
+      const audioRes = await axios.get(audioUrl, {
+        headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+        responseType: "arraybuffer",
+      });
+
+      // Step 3: Convert audio buffer to a temporary file for Whisper
+      const fs = await import("fs");
+      const path = "./temp_audio.ogg";
+      fs.writeFileSync(path, Buffer.from(audioRes.data));
+
+      // Step 4: Transcribe with Whisper (gpt-4o-mini-transcribe or whisper-1)
+      let transcription;
       try {
-        const mediaUrlRes = await axios.get(`https://graph.facebook.com/v21.0/${audioId}`, {
-          headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+        transcription = await openai.audio.transcriptions.create({
+          file: fs.createReadStream(path),
+          model: "whisper-1", // More stable & widely available than gpt-4o-mini-transcribe
         });
-        const audioUrl = mediaUrlRes.data.url;
-
-        const audioRes = await axios.get(audioUrl, {
-          headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
-          responseType: "arraybuffer",
-        });
-
-        // Try OpenAI Whisper first
-        try {
-          const transcription = await openai.audio.transcriptions.create({
-            file: new Blob([audioRes.data]),
-            model: "gpt-4o-mini-transcribe",
-          });
-          msgBody = transcription.text;
-          console.log(`🗣️ Transcribed (OpenAI): ${msgBody}`);
-        } catch (openaiErr) {
-          if (openaiErr.response?.status === 429) {
-            console.warn("⚠️ OpenAI quota exceeded — using fallback WhisperASR...");
-            const fallbackRes = await axios.post(
-              "https://api.whisper.asr.ai/v1/transcribe",
-              audioRes.data,
-              { headers: { "Content-Type": "audio/ogg" } }
-            );
-            msgBody = fallbackRes.data?.text || "";
-            console.log(`🗣️ Transcribed (Fallback): ${msgBody}`);
-          } else throw openaiErr;
-        }
-      } catch (err) {
-        console.error("❌ Voice transcription failed:", err.response?.data || err.message);
-        msgBody = "";
+      } catch (error) {
+        console.error("❌ Voice transcription failed:", error.response?.data || error.message);
+        await sendMessage(from, "⚠️ Sorry, I couldn't process that voice message.");
+        return res.sendStatus(200);
+      } finally {
+        fs.unlinkSync(path); // Clean up file
       }
-    }
 
-    if (!msgBody) {
-      console.log("⚠️ No valid text/transcription found.");
+      msgBody = transcription.text;
+      console.log(`🗣️ Transcribed voice: ${msgBody}`);
+    } catch (error) {
+      console.error("❌ Voice message handling failed:", error.response?.data || error.message);
+      await sendMessage(from, "⚠️ Couldn't handle that voice message. Please try again.");
       return res.sendStatus(200);
     }
+  }
 
     console.log(`📩 [${from}] ${msgBody}`);
 
-    /* Greetings */
-    if (["hi", "hello", "hey", "good morning", "good evening"].includes(msgBody.toLowerCase())) {
-      await sendButtonMessage(from, "👋 Welcome to FoodBites Kitchen! How can we help you today?", [
-        "📋 View Menu",
-        "🚚 Delivery Time",
-        "💰 Pricing",
-      ]);
-      return res.sendStatus(200);
-    }
+  if (["hi", "hello", "hey", "good morning", "good evening"].includes(msgBody.toLowerCase())) {
+    await sendButtonMessage(from, "👋 Welcome to FoodBites Kitchen! How can we help you today?", [
+      "📋 View Menu",
+      "🚚 Delivery Time",
+      "💰 Pricing",
+    ]);
+    return res.sendStatus(200);
+  }
 
-    /* Menu */
-    if (msgBody.toLowerCase().includes("menu")) {
-      const formattedMenu = Object.entries(MENU)
-        .map(([cat, items]) =>
-          `🍽️ *${cat.toUpperCase()}*\n${items
-            .map((i) => `• ${i.name} – ${i.price}\n  _${i.description}_`)
-            .join("\n")}`
-        )
-        .join("\n\n");
-      await sendMessage(from, formattedMenu);
-      return res.sendStatus(200);
-    }
+  if (msgBody.toLowerCase().includes("menu")) {
+    const formattedMenu = Object.entries(MENU)
+      .map(([cat, items]) =>
+        `🍽️ *${cat.toUpperCase()}*\n${items
+          .map((i) => `• ${i.name} – ${i.price}\n  _${i.description}_`)
+          .join("\n")}`
+      )
+      .join("\n\n");
+    await sendMessage(from, formattedMenu);
+    return res.sendStatus(200);
+  }
 
-    /* Orders */
-    const order = detectOrder(msgBody);
-    if (order) {
-      await sendMessage(
-        from,
-        `🧾 *Order Summary:*\n${order.quantity} × ${order.name}\n💵 Unit: ₦${order.unitPrice.toLocaleString()}\n💰 Total: ₦${order.totalPrice.toLocaleString()}\nWould you like *pickup* or *delivery*?`
-      );
-      return res.sendStatus(200);
-    }
+  const order = detectOrder(msgBody);
+  if (order) {
+    await sendMessage(
+      from,
+      `🧾 *Order Summary:*\n${order.quantity} × ${order.name}\n💵 Unit: ₦${order.unitPrice.toLocaleString()}\n💰 Total: ₦${order.totalPrice.toLocaleString()}\nWould you like *pickup* or *delivery*?`
+    );
+    return res.sendStatus(200);
+  }
 
-    /* Memory + AI chat */
-    if (!req.session.memory) req.session.memory = {};
-    if (!req.session.memory[from])
-      req.session.memory[from] = { chat: [], intent: null };
-    const memory = req.session.memory[from];
+  // Memory for chat sessions
+  if (!req.session.memory) req.session.memory = {};
+  if (!req.session.memory[from])
+    req.session.memory[from] = { chat: [], intent: null, lastQuestion: null };
+  const memory = req.session.memory[from];
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: `
-You are *FoodBites Kitchen Customer Support Bot*, a friendly WhatsApp assistant for FoodBites Restaurants.
-You help customers with menu options, delivery, pricing, and support.
-Always sound helpful, warm, and local (Nigerian English).
-If they ask for something unrelated, politely redirect to menu or delivery.
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content: `
+You are *FoodBites Kitchen Customer Support Bot*, the official WhatsApp assistant for FoodBites Restaurants — a fast, reliable, and affordable food delivery service in Nigeria.  
+Your job is to help customers with questions about:
+- Menu options
+- Delivery times
+- Pricing
+- Business hours
+- Contact and support
+
+Details about the business:
+- Small package: ₦2,500
+- Medium package: ₦8,000
+- Large package: ₦20,000
+- Within city: 1–2 hours
+- Nearby cities: 3–5 hours
+- Nationwide: 24–72 hours
+- Pickup: free for orders over ₦10,000
+- Drop-off: free for orders over ₦15,000
+- Tracking: available via WhatsApp or website
+- Support hours: 8am–8pm daily
+- Support hours on Sunday: 2pm–8pm
+- Support hours on Monday: 9am–8pm
+- Support hours on Tuesday: 8am–8pm
+- Support hours on Wednesday: 8am–8pm
+- Support hours on Thursday: 8am–8pm
+- Support hours on Friday: 8am–8pm
+- Support hours on Saturday: 10am–8pm
+- Phone: 080-7237-8767
+- Tone: friendly, professional, reassuring
+Always give helpful, accurate responses *specific to FoodBites Stores* and avoid generic AI phrases.
+If a customer asks something unrelated, politely bring the focus back to deliveries or menu options.
+
+When users or customers mention ordering food, the system automatically detects and calculates totals.
+You only need to handle follow-ups (like confirming pickup/delivery, or giving cooking time).
+
+Never invent new dishes or prices.
+Always use a friendly, conversational Nigerian tone.
+Current intent: ${memory.intent || "general"}.
 Menu:
 ${JSON.stringify(MENU, null, 2)}
-          `,
-        },
-        ...memory.chat,
-        { role: "user", content: msgBody },
-      ],
-    });
+        `,
+      },
+      ...memory.chat,
+      { role: "user", content: msgBody },
+    ],
+  });
 
-    const reply = completion.choices[0].message.content.trim();
-    memory.chat.push({ role: "user", content: msgBody });
-    memory.chat.push({ role: "assistant", content: reply });
-    await sendMessage(from, reply);
-    res.sendStatus(200);
-  } catch (err) {
-    console.error("❌ Webhook error:", err.response?.data || err.message);
-    res.sendStatus(500);
-  }
+  const reply = completion.choices[0].message.content.trim();
+  memory.chat.push({ role: "user", content: msgBody });
+  memory.chat.push({ role: "assistant", content: reply });
+
+  await sendMessage(from, reply);
+  res.sendStatus(200);
 });
 
 /* ---------- VERIFY ---------- */

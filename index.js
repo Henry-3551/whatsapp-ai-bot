@@ -13,6 +13,17 @@ app.use(bodyParser.json());
 
 app.use(
   session({
+
+
+
+
+
+
+
+
+
+
+  
     secret: "henrify_secret_key_2025",
     resave: false,
     saveUninitialized: true,
@@ -39,10 +50,9 @@ const MENU = {
     { name: "Oha Soup & Semovita", description: "Eastern Nigerian delicacy with oha leaves and proteins", price: "₦2,800" },
     { name: "Okra Soup & Eba", description: "Fresh okra soup with fish or beef", price: "₦2,500" },
     { name: "Pepper Soup (Goat / Catfish)", description: "Spicy broth with your choice of meat or fish", price: "₦2,500 / ₦3,000" },
-    { name: "Native Jollof (Palm Oil Rice)", description: "Local-style rice with smoked fish, crayfish & scent leaf", price: "₦2,500" },
+    { name: "Native Jollof (Palm Oil Rice)", description: "Local-style rice with smoked fish, crayfish, and traditional seasonings", price: "₦2,600" }
   ]
 };
-
 /* ---------- HELPERS ---------- */
 function detectOrder(message) {
   if (!message || typeof message !== "string") return null;
@@ -123,8 +133,6 @@ async function sendButtonMessage(recipient, text, buttons) {
   } catch (err) {
     console.error("❌ Error sending button message:", err.response?.data || err.message);
   }
-}
-
 // Image sending
 async function sendImageMessage(to, imageUrlOrId, caption = "") {
   try {
@@ -133,16 +141,16 @@ async function sendImageMessage(to, imageUrlOrId, caption = "") {
       to,
       type: "image",
       image: imageUrlOrId.startsWith("http")
-        ? { link: https://i.imgur.com/2TcH7d6_d.png, FoodBites Kitchen Menu}
-        : { id: https://i.imgur.com/2TcH7d6_d.png, FoodBites Kitchen Menu },
+        ? { link: imageUrlOrId, caption }
+        : { id: imageUrlOrId, caption },
     };
 
     await axios.post(
-      `https://graph.facebook.com/v21.0/${process.env.PHONE_NUMBER_ID}/messages`,
+      `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`,
       payload,
       {
         headers: {
-          "Authorization": `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
           "Content-Type": "application/json",
         },
       }
@@ -152,7 +160,9 @@ async function sendImageMessage(to, imageUrlOrId, caption = "") {
   } catch (err) {
     console.error("❌ Error sending image menu:", err.response?.data || err.message);
   }
-      }
+}
+  }
+
 
 /* ---------- WEBHOOK ---------- */
 app.post("/webhook", async (req, res) => {

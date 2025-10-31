@@ -236,7 +236,7 @@ Your job is to help customers with questions about:
 - Large package: ₦20,000 
 - Within city: 1–2 hours 
 - Nearby cities: 3–5 hours 
-- Nationwide: 24–72 hours 
+- Nationwide: 24–48 hours 
 - Pickup: free for orders over ₦10,000 
 - Drop-off: free for orders over ₦15,000 
 - Tracking: available via WhatsApp or website 

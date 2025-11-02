@@ -1,23 +1,23 @@
 // file: server.js
 import express from "express";
-import bodyParser from "body-parser";
 import session from "express-session";
-import pkg from "connect-redis";
-import { Redis } from "ioredis";
+import Redis from "ioredis";
 import axios from "axios";
 import dotenv from "dotenv";
 import OpenAI from "openai";
 import fs from "fs";
 
+dotenv.config(); // load .env before using any process.env
 
-const connectRedis = pkg.default;
-
+// --- Redis setup ---
+const { default: connectRedis } = await import("connect-redis");
+const RedisStore = connectRedis(session);
 const redisClient = new Redis(process.env.REDIS_URL);
 
-dotenv.config();
-
 const app = express();
-app.use(bodyParser.json());
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.use(
   session({
@@ -28,6 +28,7 @@ app.use(
     cookie: { maxAge: 1000 * 60 * 20 }, // 20 minutes
   })
 );
+
 
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;

@@ -2,12 +2,15 @@
 import express from "express";
 import bodyParser from "body-parser";
 import session from "express-session";
-import RedisStore from "connect-redis";
+import connectRedis from "connect-redis";
 import { Redis } from "ioredis";
 import axios from "axios";
 import dotenv from "dotenv";
 import OpenAI from "openai";
 import fs from "fs";
+
+
+const RedisStore = connectRedis(session);
 
 const redisClient = new Redis(process.env.REDIS_URL);
 
@@ -18,10 +21,7 @@ app.use(bodyParser.json());
 
 app.use(
   session({
-    store: new RedisStore({
-      client: redisClient,
-      prefix: "freshbites:",
-    }),
+    store: new RedisStore({ client: redisClient }),
     secret: "henrify_secret_key_2025",
     resave: false,
     saveUninitialized: false,

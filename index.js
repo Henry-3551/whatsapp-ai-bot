@@ -175,7 +175,7 @@ app.post("/webhook", async (req, res) => {
 
   // Handle greetings
   if (["hi", "hello", "hey", "good morning", "good evening"].includes(msgBody.toLowerCase())) {
-    await sendButtonMessage(from, "👋 Welcome to *FoodBites Kitchen!* How can we help you today?", [
+    await sendButtonMessage(from, "👋 Welcome to *FreshBites Kitchen!* How can we help you today?", [
       "📋 View Menu",
       "🚚 Delivery Info",
       "💰 Pricing",
@@ -190,7 +190,7 @@ app.post("/webhook", async (req, res) => {
      // "https://i.imgur.com/9OOauYR_d.jpg",
       "https://i.imgur.com/2TcH7d6_d.png?maxwidth=520&shape=thumb&fidelity=high",
       
-      "📋 *FoodBites Kitchen Menu* — Here’s what’s cooking today!"
+      "📋 *FreshBites Kitchen Menu* — Here’s what’s cooking today!"
     );
 
     const formattedMenu = Object.entries(MENU)
@@ -226,7 +226,7 @@ app.post("/webhook", async (req, res) => {
       {
         role: "system",
         content: `
-You are *FoodBites Kitchen Customer Support Bot*, the official WhatsApp assistant for FoodBites Restaurants — a fast, reliable, and affordable food delivery service in Nigeria. 
+You are *FreshBites Kitchen Customer Support Bot*, the official WhatsApp assistant for FreshBites Restaurants — a fast, reliable, and affordable food delivery service in Nigeria. 
 Your job is to help customers with questions about: 
 - Menu options 
 - Delivery times 
@@ -251,7 +251,7 @@ Your job is to help customers with questions about:
 - Support hours on Friday: 8am–8pm 
 - Support hours on Saturday: 10am–8pm 
 - Phone: 080-7237-8767 
-- Tone: friendly, professional, reassuring Always give helpful, accurate responses *specific to FoodBites Stores* and avoid generic AI phrases. If a customer asks something unrelated, politely bring the focus back to deliveries or menu options. 
+- Tone: friendly, professional, reassuring Always give helpful, accurate responses *specific to FreshBites Kitchen* and avoid generic AI phrases. If a customer asks something unrelated, politely bring the focus back to deliveries or menu options. 
 
 When users or customers mention ordering food, the system automatically detects and calculates totals. You only need to handle follow-ups (like confirming pickup/delivery, or giving cooking time). 
 

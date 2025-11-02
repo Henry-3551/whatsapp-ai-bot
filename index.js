@@ -2,10 +2,14 @@
 import express from "express";
 import bodyParser from "body-parser";
 import session from "express-session";
+import RedisStore from "connect-redis";
+import { Redis } from "ioredis";
 import axios from "axios";
 import dotenv from "dotenv";
 import OpenAI from "openai";
 import fs from "fs";
+
+const redisClient = new Redis(process.env.REDIS_URL);
 
 dotenv.config();
 
@@ -14,9 +18,13 @@ app.use(bodyParser.json());
 
 app.use(
   session({
+    store: new RedisStore({
+      client: redisClient,
+      prefix: "freshbites:",
+    }),
     secret: "henrify_secret_key_2025",
     resave: false,
-    saveUninitialized: true,
+    saveUninitialized: false,
     cookie: { maxAge: 1000 * 60 * 20 }, // 20 minutes
   })
 );

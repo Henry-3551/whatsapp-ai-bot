@@ -7,27 +7,52 @@ import dotenv from "dotenv";
 import OpenAI from "openai";
 import fs from "fs";
 
-dotenv.config(); // load .env before using any process.env
+dotenv.config(); // MUST run before using process.env
 
-// --- Redis setup ---
-const { default: connectRedis } = await import("connect-redis");
+// --- dynamic import of connect-redis (ESM-compatible) ---
+const connectRedisModule = await import("connect-redis").catch(e => {
+  console.error("Failed to import connect-redis:", e);
+  throw e;
+});
+const connectRedis = connectRedisModule?.default ?? connectRedisModule;
 const RedisStore = connectRedis(session);
-const redisClient = new Redis(process.env.REDIS_URL);
 
+// --- create redis client from REDIS_URL (env) ---
+const redisUrl = process.env.REDIS_URL;
+if (!redisUrl) {
+  console.warn("⚠️ REDIS_URL not set — session will still start but will use MemoryStore (not for production).");
+}
+const redisClient = redisUrl ? new Redis(redisUrl) : null;
+
+// --- express setup ---
 const app = express();
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use(
-  session({
-    store: new RedisStore({ client: redisClient }),
-    secret: "henrify_secret_key_2025",
-    resave: false,
-    saveUninitialized: false,
-    cookie: { maxAge: 1000 * 60 * 20 }, // 20 minutes
-  })
-);
+// --- session setup using RedisStore (only if redisClient available) ---
+if (redisClient) {
+  app.use(
+    session({
+      store: new RedisStore({ client: redisClient }),
+      secret: process.env.SESSION_SECRET || "henrify_secret_key_2025",
+      resave: false,
+      saveUninitialized: false,
+      cookie: { maxAge: 1000 * 60 * 20 }, // 20 minutes
+    })
+  );
+  console.log("✅ Session store: Redis");
+} else {
+  // fallback (dev only) — still warns
+  app.use(
+    session({
+      secret: process.env.SESSION_SECRET || "henrify_secret_key_2025",
+      resave: false,
+      saveUninitialized: false,
+      cookie: { maxAge: 1000 * 60 * 20 },
+    })
+  );
+  console.warn("⚠️ Redis not configured — using MemoryStore (not for production).");
+}
 
 
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;

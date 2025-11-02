@@ -2,6 +2,7 @@
 import express from "express";
 import session from "express-session";
 import Redis from "ioredis";
+import { RedisStore } from "connect-redis"; // <-- ✅ use named import
 import axios from "axios";
 import dotenv from "dotenv";
 import OpenAI from "openai";
@@ -9,28 +10,30 @@ import fs from "fs";
 
 dotenv.config();
 
-// --- CORRECT import for connect-redis v7 ---
-import connectRedis from "connect-redis";  // ✅ this gives you the constructor
-const RedisStore = connectRedis(session);  // ✅ this works in v7+
-
 // --- Redis client ---
 const redisClient = new Redis(process.env.REDIS_URL);
 
-// --- Express setup ---
+// --- Express app setup ---
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- Sessions ---
+// --- Sessions using connect-redis v8 syntax ---
 app.use(
   session({
-    store: new RedisStore({ client: redisClient }),
+    store: new RedisStore({
+      client: redisClient,
+      prefix: "sess:", // optional
+    }),
     secret: process.env.SESSION_SECRET || "henrify_secret_key_2025",
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 1000 * 60 * 20 }, // 20 mins
+    cookie: { maxAge: 1000 * 60 * 20 }, // 20 minutes
   })
 );
+
+console.log("✅ Redis session store connected successfully");
+
 
 
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;

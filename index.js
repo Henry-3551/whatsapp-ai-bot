@@ -2,7 +2,7 @@
 import express from "express";
 import bodyParser from "body-parser";
 import session from "express-session";
-import connectRedis from "connect-redis";
+import pkg from "connect-redis";
 import { Redis } from "ioredis";
 import axios from "axios";
 import dotenv from "dotenv";
@@ -10,7 +10,7 @@ import OpenAI from "openai";
 import fs from "fs";
 
 
-const RedisStore = connectRedis(session);
+const connectRedis = pkg.default;
 
 const redisClient = new Redis(process.env.REDIS_URL);
 

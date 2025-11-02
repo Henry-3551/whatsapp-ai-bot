@@ -2,11 +2,10 @@
 import express from "express";
 import session from "express-session";
 import Redis from "ioredis";
-import { RedisStore } from "connect-redis"; // <-- ✅ use named import
+import { RedisStore } from "connect-redis";
 import axios from "axios";
 import dotenv from "dotenv";
 import OpenAI from "openai";
-import fs from "fs";
 
 dotenv.config();
 
@@ -21,41 +20,29 @@ app.use(express.urlencoded({ extended: true }));
 // --- Sessions using connect-redis v8 syntax ---
 app.use(
   session({
-    store: new RedisStore({
-      client: redisClient,
-      prefix: "sess:", // optional
-    }),
+    store: new RedisStore({ client: redisClient, prefix: "sess:" }),
     secret: process.env.SESSION_SECRET || "henrify_secret_key_2025",
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 1000 * 60 * 20 }, // 20 minutes
+    cookie: { maxAge: 1000 * 60 * 20 },
   })
 );
 
 console.log("✅ Redis session store connected successfully");
 
-
-
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 /* ---------- MENU ---------- */
 const MENU = {
   "Main Courses (Lunch & Dinner)": [
     { name: "Jollof Rice & Chicken", description: "Classic Nigerian jollof with fried or grilled chicken", price: "₦2,500" },
-    { name: "Fried Rice & Dodo", description: "Fried rice with plantain and peppered chicken or beef", price: "₦2,700" },
     { name: "Ofada Rice & Ayamase Sauce", description: "Local rice with spicy green ofada stew and assorted meat", price: "₦3,000" },
     { name: "Egusi Soup & Pounded Yam", description: "Melon seed soup with beef, fish, and vegetable", price: "₦2,800" },
     { name: "Efo Riro & Amala/Fufu", description: "Rich spinach stew with assorted meat", price: "₦2,500" },
-    { name: "Bitterleaf Soup & Fufu", description: "Traditional onugbu soup with meat and stockfish", price: "₦2,700" },
-    { name: "Oha Soup & Semovita", description: "Eastern Nigerian delicacy with oha leaves and proteins", price: "₦2,800" },
-    { name: "Okra Soup & Eba", description: "Fresh okra soup with fish or beef", price: "₦2,500" },
-    { name: "Pepper Soup (Goat / Catfish)", description: "Spicy broth with your choice of meat or fish", price: "₦2,500 / ₦3,000" },
-    { name: "Native Jollof (Palm Oil Rice)", description: "Local-style rice with smoked fish, crayfish, and traditional seasonings", price: "₦2,600" },
   ],
 };
 
@@ -86,21 +73,11 @@ function detectOrder(message) {
 }
 
 async function sendMessage(to, text) {
-  if (!to || !text) return;
   try {
     await axios.post(
       `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to,
-        text: { body: text },
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-        },
-      }
+      { messaging_product: "whatsapp", to, text: { body: text } },
+      { headers: { "Content-Type": "application/json", Authorization: `Bearer ${WHATSAPP_TOKEN}` } }
     );
     console.log(`✅ Message sent to ${to}`);
   } catch (err) {
@@ -108,14 +85,13 @@ async function sendMessage(to, text) {
   }
 }
 
-async function sendButtonMessage(recipient, text, buttons) {
-  if (!recipient || !buttons?.length) return;
+async function sendButtonMessage(to, text, buttons) {
   try {
     await axios.post(
       `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`,
       {
         messaging_product: "whatsapp",
-        to: recipient,
+        to,
         type: "interactive",
         interactive: {
           type: "button",
@@ -128,89 +104,84 @@ async function sendButtonMessage(recipient, text, buttons) {
           },
         },
       },
-      {
-        headers: {
-          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-      }
+      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" } }
     );
-    console.log(`✅ Button message sent to ${recipient}`);
+    console.log(`✅ Button message sent to ${to}`);
   } catch (err) {
     console.error("❌ Error sending button message:", err.response?.data || err.message);
   }
 }
 
-/* ---------- SEND IMAGE MESSAGE ---------- */
-async function sendImageMessage(to, imageUrlOrId, caption = "") {
-  if (!to) return;
+async function sendImageMessage(to, imageUrl, caption = "") {
   try {
-    const payload = {
-      messaging_product: "whatsapp",
-      to,
-      type: "image",
-      image: imageUrlOrId.startsWith("http")
-        ? { link: imageUrlOrId, caption }
-        : { id: imageUrlOrId, caption },
-    };
-
     await axios.post(
       `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`,
-      payload,
       {
-        headers: {
-          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-      }
+        messaging_product: "whatsapp",
+        to,
+        type: "image",
+        image: { link: imageUrl, caption },
+      },
+      { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" } }
     );
-    console.log(`✅ Image menu sent to ${to}`);
+    console.log(`✅ Image sent to ${to}`);
   } catch (err) {
-    console.error("❌ Error sending image menu:", err.response?.data || err.message);
+    console.error("❌ Error sending image:", err.response?.data || err.message);
   }
 }
 
 /* ---------- WEBHOOK ---------- */
 app.post("/webhook", async (req, res) => {
-  const data = req.body;
-  const message = data.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+  const message = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
   const from = message?.from;
-  const type = message?.type;
-  let msgBody =
-    message?.text?.body ||
-    message?.interactive?.button_reply?.title ||
-    "";
+  const msgBody = message?.text?.body || message?.interactive?.button_reply?.title || "";
 
-  if (!message || !from || !msgBody) {
-    console.log("⚠️ No text message or sender found, skipping event.");
-    return res.sendStatus(200);
-  }
-
+  if (!message || !from || !msgBody) return res.sendStatus(200);
   console.log(`📩 [${from}] ${msgBody}`);
 
-  // Handle greetings
-  if (["hi", "hello", "hey", "good morning", "good evening"].includes(msgBody.toLowerCase())) {
-    await sendButtonMessage(from, "👋 Welcome to *FreshBites Kitchen!* How can we help you today?", [
+  // Initialize session memory
+  if (!req.session.memory) req.session.memory = {};
+  if (!req.session.memory[from]) {
+    req.session.memory[from] = { seen: false, chat: [] };
+  }
+
+  const userData = req.session.memory[from];
+
+  // 👋 First-time user intro
+  if (!userData.seen) {
+    userData.seen = true;
+
+    // 1️⃣ Send brand welcome image(s)
+    await sendImageMessage(from, "https://i.imgur.com/8Y6tVhT.jpeg", "🍽️ *Welcome to FreshBites Kitchen!*");
+    await sendImageMessage(from, "https://i.imgur.com/2TcH7d6_d.png", "🔥 Taste the freshness. Feel the flavor.");
+
+    // 2️⃣ Send warm intro text
+    await sendMessage(
+      from,
+      `👋 Hi there! Welcome to *FreshBites Kitchen* — your go-to spot for delicious, freshly cooked Nigerian meals. 🇳🇬\n\nFrom Jollof to Egusi, our dishes are made with love and delivered hot to your doorstep 🍛❤️`
+    );
+
+    // 3️⃣ Send main menu buttons
+    await sendButtonMessage(from, "What would you like to do today?", [
       "📋 View Menu",
       "🚚 Delivery Info",
       "💰 Pricing",
     ]);
+
     return res.sendStatus(200);
   }
 
-  // Handle menu request (image + text)
+  // Menu request
   if (msgBody.toLowerCase().includes("menu")) {
     await sendImageMessage(
       from,
-     // "https://i.imgur.com/9OOauYR_d.jpg",
-      "https://i.imgur.com/2TcH7d6_d.png?maxwidth=520&shape=thumb&fidelity=high",
-      
-      "📋 *FreshBites Kitchen Menu* — Here’s what’s cooking today!"
+      "https://i.imgur.com/2TcH7d6_d.png",
+      "📋 *FreshBites Menu* — Here’s what’s cooking today!"
     );
 
     const formattedMenu = Object.entries(MENU)
       .map(([cat, items]) =>
-        `🍽️ *${cat.toUpperCase()}*\n${items
+        `🍽️ *${cat}*\n${items
           .map((i) => `• ${i.name} – ${i.price}\n  _${i.description}_`)
           .join("\n")}`
       )
@@ -230,62 +201,25 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // Chat memory
-  if (!req.session.memory) req.session.memory = {};
-  if (!req.session.memory[from]) req.session.memory[from] = { chat: [], intent: null };
-  const memory = req.session.memory[from];
-
+  // AI fallback
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [
       {
         role: "system",
         content: `
-You are *FreshBites Kitchen Customer Support Bot*, the official WhatsApp assistant for FreshBites Restaurants — a fast, reliable, and affordable food delivery service in Nigeria. 
-Your job is to help customers with questions about: 
-- Menu options 
-- Delivery times 
-- Pricing 
-- Business hours 
-- Contact and support Details about the business: 
-- Small package: ₦2,500 
-- Medium package: ₦8,000 
-- Large package: ₦20,000 
-- Within city: 1–2 hours 
-- Nearby cities: 3–5 hours 
-- Nationwide: 24–48 hours 
-- Pickup: free for orders over ₦10,000 
-- Drop-off: free for orders over ₦15,000 
-- Tracking: available via WhatsApp or website 
-- Support hours: 8am–8pm daily 
-- Support hours on Sunday: 2pm–8pm 
-- Support hours on Monday: 9am–8pm 
-- Support hours on Tuesday: 8am–8pm 
-- Support hours on Wednesday: 8am–8pm 
-- Support hours on Thursday: 8am–8pm 
-- Support hours on Friday: 8am–8pm 
-- Support hours on Saturday: 10am–8pm 
-- Phone: 080-7237-8767 
-- Tone: friendly, professional, reassuring Always give helpful, accurate responses *specific to FreshBites Kitchen* and avoid generic AI phrases. If a customer asks something unrelated, politely bring the focus back to deliveries or menu options. 
-
-When users or customers mention ordering food, the system automatically detects and calculates totals. You only need to handle follow-ups (like confirming pickup/delivery, or giving cooking time). 
-
-Never invent new dishes or prices. Always use a friendly, conversational Nigerian tone. 
-Current intent: ${memory.intent || "general"}.
-
-Menu:
-${JSON.stringify(MENU, null, 2)}
-        `,
+You are *FreshBites Kitchen Assistant*, the official WhatsApp bot for FreshBites Restaurants in Nigeria.
+You are friendly, lively, and helpful. Guide users about menu, delivery, or pricing with accurate info.
+If off-topic, politely bring focus back to FreshBites Kitchen services.`,
       },
-      ...memory.chat,
+      ...userData.chat,
       { role: "user", content: msgBody },
     ],
   });
 
   const reply = completion.choices[0].message.content.trim();
-  memory.chat.push({ role: "user", content: msgBody });
-  memory.chat.push({ role: "assistant", content: reply });
-
+  userData.chat.push({ role: "user", content: msgBody });
+  userData.chat.push({ role: "assistant", content: reply });
   await sendMessage(from, reply);
   res.sendStatus(200);
 });

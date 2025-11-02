@@ -202,14 +202,14 @@ app.post("/webhook", async (req, res) => {
     // 1️⃣ Send brand logo
     await sendImageMessage(
       from,
-      "https://i.imgur.com/MgzQRvP_d.jpeg?maxwidth=520&shape=thumb&fidelity=high", // replace with your logo image URL
+      "https://i.imgur.com/6qCXNkR_d.jpeg?maxwidth=520&shape=thumb&fidelity=high", // replace with your logo image URL
       "🍽️ *Welcome to FreshBites Kitchen!* — Where every meal tells a delicious story."
     );
 
     // 2️⃣ Send restaurant photo
     await sendImageMessage(
       from,
-      "https://i.imgur.com/6qCXNkR_d.jpeg?maxwidth=520&shape=thumb&fidelity=high", // replace with restaurant interior/food photo
+      "https://i.imgur.com/9rBBM6d_d.jpeg?maxwidth=520&shape=thumb&fidelity=high", // replace with restaurant interior/food photo
       "✨ Experience the taste, aroma, and warmth of our kitchen — freshly made for you ❤️"
     );
 

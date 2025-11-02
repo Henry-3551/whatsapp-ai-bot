@@ -28,7 +28,7 @@ app.use(
     secret: process.env.SESSION_SECRET || "henrify_secret_key_2025",
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 1000 * 60 * 20 }, // 20 minutes
+    cookie: { maxAge: 1000 * 60 * 60 }, // 1 hour/ 60 minutes
   })
 );
 
@@ -209,8 +209,8 @@ app.post("/webhook", async (req, res) => {
     // 2️⃣ Send restaurant photo
     await sendImageMessage(
       from,
-      "https://i.imgur.com/9rBBM6d_d.jpeg?maxwidth=520&shape=thumb&fidelity=high", // replace with restaurant interior/food photo
-      "✨ Experience the taste, aroma, and warmth of our kitchen — freshly made for you ❤️"
+      "https://i.imgur.com/XHLXHLR_d.jpeg?maxwidth=520&shape=thumb&fidelity=high", // replace with restaurant interior/food photo
+      "✨ *Experience the taste, aroma, and warmth of our kitchen* — freshly made for you ❤️"
     );
 
     // 3️⃣ Send interactive intro buttons
@@ -224,7 +224,7 @@ app.post("/webhook", async (req, res) => {
   }
 
   // Handle greetings
-  if (["hi", "hello", "hey", "good morning", "good evening"].includes(msgBody.toLowerCase())) {
+  if (["hi", "hello", "hey", "greetings", "good morning", "good afternoon", "good evening"].includes(msgBody.toLowerCase())) {
     await sendButtonMessage(from, "👋 Welcome back to *FreshBites Kitchen!* How can we help you today?", [
       "📋 View Menu",
       "🚚 Delivery Info",
@@ -237,7 +237,7 @@ app.post("/webhook", async (req, res) => {
   if (msgBody.toLowerCase().includes("menu")) {
     await sendImageMessage(
       from,
-      "https://i.imgur.com/2TcH7d6_d.png",
+      "https://i.imgur.com/2TcH7d6_d.png?maxwidth=520&shape=thumb&fidelity=high",
       "📋 *FreshBites Kitchen Menu* — Here’s what’s cooking today!"
     );
 
@@ -263,7 +263,7 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // AI Chat fallback
+  // AI Chat memory
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [
@@ -271,8 +271,39 @@ app.post("/webhook", async (req, res) => {
         role: "system",
         content: `
 You are *FreshBites Kitchen Customer Support Bot*, the official WhatsApp assistant for FreshBites Restaurants — a fast, reliable, and affordable food delivery service in Nigeria. 
-Your job is to help customers with questions about menu options, delivery times, pricing, and business hours.
-Tone: friendly, professional, and conversational. Keep responses focused on FreshBites Kitchen.
+Your job is to help customers with questions about: 
+- Menu options 
+- Delivery times 
+- Pricing 
+- Business hours 
+- Contact and support Details about the business: 
+- Small package: ₦2,500 
+- Medium package: ₦8,000 
+- Large package: ₦20,000 
+- Within city: 1–2 hours 
+- Nearby cities: 3–5 hours 
+- Nationwide: 24–48 hours 
+- Pickup: free for orders over ₦10,000 
+- Drop-off: free for orders over ₦15,000 
+- Tracking: available via WhatsApp or website 
+- Support hours: 8am–8pm daily 
+- Support hours on Sunday: 2pm–8pm 
+- Support hours on Monday: 9am–8pm 
+- Support hours on Tuesday: 8am–8pm 
+- Support hours on Wednesday: 8am–8pm 
+- Support hours on Thursday: 8am–8pm 
+- Support hours on Friday: 8am–8pm 
+- Support hours on Saturday: 10am–8pm 
+- Phone: 080-7237-8767 
+- Tone: friendly, professional, reassuring Always give helpful, accurate responses *specific to FreshBites Kitchen* and avoid generic AI phrases. If a customer asks something unrelated, politely bring the focus back to deliveries or menu options. 
+
+When users or customers mention ordering food, the system automatically detects and calculates totals. You only need to handle follow-ups (like confirming pickup/delivery, or giving cooking time). 
+
+Never invent new dishes or prices. Always use a friendly, conversational Nigerian tone. 
+Current intent: ${memory.intent || "general"}.
+
+Menu:
+${JSON.stringify(MENU, null, 2)}
 `,
       },
       ...memory.chat,

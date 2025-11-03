@@ -234,36 +234,36 @@ app.post("/webhook", async (req, res) => {
 
   console.log(`📩 [${from}] ${msgBody}`);
 
-  // ✅ Load user memory from Redis
+  /* ===== Load memory from Redis ===== */
   let memory = await getUserMemory(from);
   const now = Date.now();
-
   const shouldGreetAgain =
     !memory.lastGreetedAt || now - memory.lastGreetedAt > 24 * 60 * 60 * 1000;
 
-  // ✅ First-time or new-day greeting
+  /* ===== FIRST-TIME GREETING ===== */
   if (!memory.greeted || shouldGreetAgain) {
     memory.greeted = true;
     memory.lastGreetedAt = now;
+    memory.chat = [];
+    memory.intent = "intro";
 
-    // 1️⃣ Send brand logo
+    // send brand images
     await sendImageMessage(
       from,
-      "https://i.imgur.com/6qCXNkR_d.jpeg?maxwidth=520&shape=thumb&fidelity=high",
+      "https://i.imgur.com/6qCXNkR_d.jpeg",
       "🍽️ *Welcome to FreshBites Kitchen!* — Where every meal tells a delicious story."
     );
 
-    // 2️⃣ Send restaurant photo
     await sendImageMessage(
       from,
-      "https://i.imgur.com/XHLXHLR_d.jpeg?maxwidth=520&shape=thumb&fidelity=high",
+      "https://i.imgur.com/XHLXHLR_d.jpeg",
       "✨ *Experience the taste, aroma, and warmth of our kitchen* — freshly made for you ❤️"
     );
 
-    // 3️⃣ Send interactive buttons
+    // intro buttons
     await sendButtonMessage(
       from,
-      "👋 Hi there! It’s great to have you here at *FreshBites Kitchen*.\n\nI’m your friendly assistant. What would you like to do today?",
+      "👋 Hi there! Welcome to *FreshBites Kitchen*.\nI’m your friendly assistant — what would you like to do today?",
       ["📋 View Menu", "🚚 Delivery Info", "💰 Pricing"]
     );
 
@@ -271,7 +271,42 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // ✅ Handle greetings
+  /* ===== MENU REQUEST ===== */
+  if (msgBody.toLowerCase().includes("menu")) {
+    memory.intent = "menu";
+
+    await sendImageMessage(
+      from,
+      "https://i.imgur.com/2TcH7d6_d.png",
+      "📋 *FreshBites Kitchen Menu* — Here’s what’s cooking today!"
+    );
+
+    const formattedMenu = Object.entries(MENU)
+      .map(([cat, items]) =>
+        `🍽️ *${cat.toUpperCase()}*\n${items
+          .map((i) => `• ${i.name} – ${i.price}\n  _${i.description}_`)
+          .join("\n")}`
+      )
+      .join("\n\n");
+
+    await sendMessage(from, formattedMenu);
+    await saveUserMemory(from, memory);
+    return res.sendStatus(200);
+  }
+
+  /* ===== ORDER DETECTION ===== */
+  const order = detectOrder(msgBody);
+  if (order) {
+    memory.intent = "order";
+    await sendMessage(
+      from,
+      `🧾 *Order Summary:*\n${order.quantity} × ${order.name}\n💵 Unit: ₦${order.unitPrice.toLocaleString()}\n💰 Total: ₦${order.totalPrice.toLocaleString()}\nWould you like *pickup* or *delivery*?`
+    );
+    await saveUserMemory(from, memory);
+    return res.sendStatus(200);
+  }
+
+  /* ===== GREETINGS ===== */
   if (
     ["hi", "hello", "hey", "good morning", "good afternoon", "good evening"].includes(
       msgBody.toLowerCase()
@@ -285,96 +320,33 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // ✅ Handle menu requests
-  if (msgBody.toLowerCase().includes("menu")) {
-    await sendImageMessage(
-      from,
-      "https://i.imgur.com/rIMIvng_d.jpeg?maxwidth=520&shape=thumb&fidelity=high",
-      "📋 *FreshBites Kitchen Menu* — Here’s what’s cooking today!"
-    );
+  /* ===== AI CHAT LOGIC (CONTEXT AWARE) ===== */
+  const systemPrompt = `
+You are *FreshBites Kitchen's WhatsApp Assistant*, a warm, conversational Nigerian restaurant bot.
+You already know the customer's current intent is "${memory.intent || "general"}".
+If the user says "sure", "yes", or similar, respond based on that intent.
+If intent = "menu", show menu again or recommend best dishes.
+If intent = "order", guide them to confirm pickup or delivery.
+If intent = "intro", guide them to menu or delivery info.
+If unclear, politely clarify.
+Always be friendly and concise.`;
 
-    const formattedMenu = Object.entries(MENU)
-      .map(([cat, items]) =>
-        `🍽️ *${cat.toUpperCase()}*\n${items
-          .map((i) => `• ${i.name} – ${i.price}\n  _${i.description}_`)
-          .join("\n")}`
-      )
-      .join("\n\n");
+  memory.chat.push({ role: "user", content: msgBody });
+  const conversation = [
+    { role: "system", content: systemPrompt },
+    ...memory.chat.slice(-6), // keep last few messages only
+  ];
 
-    await sendMessage(from, formattedMenu);
-    return res.sendStatus(200);
-  }
-
-  // ✅ Detect orders
-  const order = detectOrder(msgBody);
-  if (order) {
-    await sendMessage(
-      from,
-      `🧾 *Order Summary:*\n${order.quantity} × ${order.name}\n💵 Unit: ₦${order.unitPrice.toLocaleString()}\n💰 Total: ₦${order.totalPrice.toLocaleString()}\nWould you like *pickup* or *delivery*?`
-    );
-    return res.sendStatus(200);
-  }
-
-// ✅ Continue AI chat (you can keep your existing OpenAI logic below)
-// proceed to the OpenAI handling below (do not end the request here so memory and msgBody remain available)
-
-
-// ✅ Continue chat flow
-// (Your OpenAI conversation logic remains below unchanged)
-
-// AI Chat memory
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "system",
-        content: `
-You are *FreshBites Kitchen Customer Support Bot*, the official WhatsApp assistant for FreshBites Restaurants — a fast, reliable, and affordable food delivery service in Nigeria. 
-Your job is to help customers with questions about: 
-- Menu options 
-- Delivery times 
-- Pricing 
-- Business hours 
-- Contact and support Details about the business: 
-- Small package: ₦2,500 
-- Medium package: ₦8,000 
-- Large package: ₦20,000 
-- Within city: 1–2 hours 
-- Nearby cities: 3–5 hours 
-- Nationwide: 24–48 hours 
-- Pickup: free for orders over ₦10,000 
-- Drop-off: free for orders over ₦15,000 
-- Tracking: available via WhatsApp or website 
-- Support hours: 8am–8pm daily 
-- Support hours on Sunday: 2pm–8pm 
-- Support hours on Monday: 9am–8pm 
-- Support hours on Tuesday: 8am–8pm 
-- Support hours on Wednesday: 8am–8pm 
-- Support hours on Thursday: 8am–8pm 
-- Support hours on Friday: 8am–8pm 
-- Support hours on Saturday: 10am–8pm 
-- Phone: 080-7237-8767 
-- Tone: friendly, professional, reassuring Always give helpful, accurate responses *specific to FreshBites Kitchen* and avoid generic AI phrases. If a customer asks something unrelated, politely bring the focus back to deliveries or menu options. 
-
-When users or customers mention ordering food, the system automatically detects and calculates totals. You only need to handle follow-ups (like confirming pickup/delivery, or giving cooking time). 
-
-Never invent new dishes or prices. Always use a friendly, conversational Nigerian tone. 
-Current intent: ${memory.intent || "general"}.
-
-Menu:
-${JSON.stringify(MENU, null, 2)}
-`,
-      },
-      ...memory.chat,
-      { role: "user", content: msgBody },
-    ],
+    messages: conversation,
   });
 
   const reply = completion.choices[0].message.content.trim();
-  memory.chat.push({ role: "user", content: msgBody });
   memory.chat.push({ role: "assistant", content: reply });
 
   await sendMessage(from, reply);
+  await saveUserMemory(from, memory);
   res.sendStatus(200);
 });
 

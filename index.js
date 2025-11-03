@@ -256,7 +256,7 @@ app.post("/webhook", async (req, res) => {
   if (msgBody.toLowerCase().includes("menu")) {
     await sendImageMessage(
       from,
-      "https://i.imgur.com/2TcH7d6_d.png?maxwidth=520&shape=thumb&fidelity=high",
+      "https://i.imgur.com/rIMIvng_d.jpeg?maxwidth=520&shape=thumb&fidelity=high",
       "📋 *FreshBites Kitchen Menu* — Here’s what’s cooking today!"
     );
 

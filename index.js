@@ -170,6 +170,17 @@ async function sendImageMessage(to, imageUrlOrId, caption = "") {
   }
 }
 
+/* ---------- USER MEMORY HELPERS ---------- */
+async function getUserMemory(userId) {
+  const data = await redisClient.get(`user:${userId}`);
+  return data ? JSON.parse(data) : { greeted: false, chat: [], intent: null, lastGreetedAt: null };
+}
+
+async function saveUserMemory(userId, memory) {
+  await redisClient.set(`user:${userId}`, JSON.stringify(memory), "EX", 60 * 60 * 24 * 7); // keep for 7 days
+}
+
+
 // 👇 add at the top of index.js (above app.post("/webhook", ...))
 const greetedUsers = new Map(); // Store users who have been greeted
 
@@ -178,8 +189,7 @@ app.post("/webhook", async (req, res) => {
   const data = req.body;
   const message = data.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
   const from = message?.from;
-  const type = message?.type;
-  let msgBody =
+  const msgBody =
     message?.text?.body ||
     message?.interactive?.button_reply?.title ||
     "";
@@ -191,30 +201,17 @@ app.post("/webhook", async (req, res) => {
 
   console.log(`📩 [${from}] ${msgBody}`);
 
-  // ✅ Initialize session memory
-  if (!req.session.memory) req.session.memory = {};
-  if (!req.session.memory[from]) {
-    req.session.memory[from] = {
-      chat: [],
-      intent: null,
-      greeted: false,
-      lastGreetedAt: null,
-    };
-  }
-
-  const memory = req.session.memory[from];
+  // ✅ Load user memory from Redis
+  let memory = await getUserMemory(from);
   const now = Date.now();
 
-  // ✅ Check if last greeting was over 24 hours ago
   const shouldGreetAgain =
     !memory.lastGreetedAt || now - memory.lastGreetedAt > 24 * 60 * 60 * 1000;
 
-  // ✅ FIRST-TIME USER OR 24-HR RESET
+  // ✅ First-time or new-day greeting
   if (!memory.greeted || shouldGreetAgain) {
     memory.greeted = true;
     memory.lastGreetedAt = now;
-
-    console.log(`👋 Sending welcome intro to new/returning user: ${from}`);
 
     // 1️⃣ Send brand logo
     await sendImageMessage(
@@ -223,26 +220,27 @@ app.post("/webhook", async (req, res) => {
       "🍽️ *Welcome to FreshBites Kitchen!* — Where every meal tells a delicious story."
     );
 
-    // 2️⃣ Send restaurant image
+    // 2️⃣ Send restaurant photo
     await sendImageMessage(
       from,
       "https://i.imgur.com/XHLXHLR_d.jpeg?maxwidth=520&shape=thumb&fidelity=high",
       "✨ *Experience the taste, aroma, and warmth of our kitchen* — freshly made for you ❤️"
     );
 
-    // 3️⃣ Send main button message
+    // 3️⃣ Send interactive buttons
     await sendButtonMessage(
       from,
       "👋 Hi there! It’s great to have you here at *FreshBites Kitchen*.\n\nI’m your friendly assistant. What would you like to do today?",
       ["📋 View Menu", "🚚 Delivery Info", "💰 Pricing"]
     );
 
+    await saveUserMemory(from, memory);
     return res.sendStatus(200);
   }
 
   // ✅ Handle greetings
   if (
-    ["hi", "hello", "hey", "greetings", "good morning", "good afternoon", "good evening"].includes(
+    ["hi", "hello", "hey", "good morning", "good afternoon", "good evening"].includes(
       msgBody.toLowerCase()
     )
   ) {
@@ -254,7 +252,7 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // ✅ Handle menu request
+  // ✅ Handle menu requests
   if (msgBody.toLowerCase().includes("menu")) {
     await sendImageMessage(
       from,
@@ -263,11 +261,10 @@ app.post("/webhook", async (req, res) => {
     );
 
     const formattedMenu = Object.entries(MENU)
-      .map(
-        ([cat, items]) =>
-          `🍽️ *${cat.toUpperCase()}*\n${items
-            .map((i) => `• ${i.name} – ${i.price}\n  _${i.description}_`)
-            .join("\n")}`
+      .map(([cat, items]) =>
+        `🍽️ *${cat.toUpperCase()}*\n${items
+          .map((i) => `• ${i.name} – ${i.price}\n  _${i.description}_`)
+          .join("\n")}`
       )
       .join("\n\n");
 
@@ -284,6 +281,10 @@ app.post("/webhook", async (req, res) => {
     );
     return res.sendStatus(200);
   }
+
+// ✅ Continue AI chat (you can keep your existing OpenAI logic below)
+// proceed to the OpenAI handling below (do not end the request here so memory and msgBody remain available)
+
 
 // ✅ Continue chat flow
 // (Your OpenAI conversation logic remains below unchanged)

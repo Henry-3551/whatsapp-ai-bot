@@ -45,7 +45,34 @@ const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 /* ---------- MENU ---------- */
 const MENU = {
-  "Main Courses (Lunch & Dinner)": [
+  "Appetizers": [
+    { name: "Spring Rolls", description: "Crispy rolls filled with vegetables", price: "₦1,200" },
+    { name: "Chicken Wings", description: "Spicy chicken wings served with dip", price: "₦1,500" },
+  ],
+  "🍽 BREAKFAST": [
+    { name: "Yam & Egg Sauce", description: "Boiled or fried yam served with spicy tomato & egg sauce", price: "₦1,800" },
+    { name: "Plantain & Beans (Ewa Agoyin)", description: "Sweet fried plantain with spicy mashed beans", price: "₦1,500" },
+    { name: "Akara & Pap", description: "Fried bean cakes served with custard or pap (ogi)", price: "₦1,200" },
+    { name: "Moi Moi & Bread", description: "Steamed bean pudding served with soft bread", price: "₦1,300" },
+    { name: "Noodles & Fried Egg", description: "Indomie-style noodles with vegetables & fried egg", price: "₦1,500" },
+  ],
+  "🍢 SNACKS & LIGHT MEALS": [
+    { name: "Meat Pie", description: "Flaky pastry stuffed with minced meat & vegetables", price: "₦800" },
+    { name: "Sausage Roll", description: "Pastry roll filled with sausage meat", price: "₦700" },
+    { name: "Puff-Puff (5 pcs)", description: "Sweet fried dough balls", price: "₦600" },
+    { name: "Chin Chin (Small Pack)", description: "Crunchy fried dough snack", price: "₦500" },
+    { name: "Suya (Beef / Chicken)", description: "Spicy skewered meat served with onions and peppers", price: "₦1,000-₦2,000" },
+  ],
+  "🥤 DRINKS & BEVERAGES": [
+    { name: "Soft Drinks", Size: "50cl", price: "₦500" },
+    { name: "Bottled Water", Size: "75cl", price: "₦300" },
+    { name: "Zobo Drink", Size: "cup", price: "₦600" },
+    { name: "Chapman", Size: "Glass", price: "₦1,200" },
+    { name: "Palm Wine", Size: "Calabash", price: "₦1,000" },
+    { name: "Smoothie", Size: "Glass", price: "₦1,800" },
+    { name: "Beer / Malt / Energy Drink", Size: "Bottle", price: "₦1,200–₦1,800" },
+  ],
+  "🍛 MAIN COURSES (LUNCH & DINNER)": [
     { name: "Jollof Rice & Chicken", description: "Classic Nigerian jollof with fried or grilled chicken", price: "₦2,500" },
     { name: "Fried Rice & Dodo", description: "Fried rice with plantain and peppered chicken or beef", price: "₦2,700" },
     { name: "Ofada Rice & Ayamase Sauce", description: "Local rice with spicy green ofada stew and assorted meat", price: "₦3,000" },

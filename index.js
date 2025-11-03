@@ -234,36 +234,37 @@ app.post("/webhook", async (req, res) => {
 
   console.log(`📩 [${from}] ${msgBody}`);
 
-  /* ===== Load memory from Redis ===== */
+  // ✅ Load user memory from Redis
   let memory = await getUserMemory(from);
   const now = Date.now();
   const shouldGreetAgain =
     !memory.lastGreetedAt || now - memory.lastGreetedAt > 24 * 60 * 60 * 1000;
 
-  /* ===== FIRST-TIME GREETING ===== */
+  // ✅ First-time or new-day greeting
   if (!memory.greeted || shouldGreetAgain) {
     memory.greeted = true;
     memory.lastGreetedAt = now;
     memory.chat = [];
-    memory.intent = "intro";
+    memory.intent = "intro"
 
-    // send brand images
+    // 1️⃣ Send brand logo
     await sendImageMessage(
       from,
-      "https://i.imgur.com/6qCXNkR_d.jpeg",
+      "https://i.imgur.com/6qCXNkR_d.jpeg?maxwidth=520&shape=thumb&fidelity=high",
       "🍽️ *Welcome to FreshBites Kitchen!* — Where every meal tells a delicious story."
     );
 
+    // 2️⃣ Send restaurant photo
     await sendImageMessage(
       from,
-      "https://i.imgur.com/XHLXHLR_d.jpeg",
+      "https://i.imgur.com/XHLXHLR_d.jpeg?maxwidth=520&shape=thumb&fidelity=high",
       "✨ *Experience the taste, aroma, and warmth of our kitchen* — freshly made for you ❤️"
     );
 
-    // intro buttons
+    // 3️⃣ Send interactive buttons
     await sendButtonMessage(
       from,
-      "👋 Hi there! Welcome to *FreshBites Kitchen*.\nI’m your friendly assistant — what would you like to do today?",
+      "👋 Hi there! It’s great to have you here at *FreshBites Kitchen*.\n\nI’m your friendly assistant. What would you like to do today?",
       ["📋 View Menu", "🚚 Delivery Info", "💰 Pricing"]
     );
 
@@ -271,13 +272,25 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  /* ===== MENU REQUEST ===== */
-  if (msgBody.toLowerCase().includes("menu")) {
-    memory.intent = "menu";
+  // ✅ Handle greetings
+  if (
+    ["hi", "hello", "hey", "good morning", "good afternoon", "good evening"].includes(
+      msgBody.toLowerCase()
+    )
+  ) {
+    await sendButtonMessage(
+      from,
+      "👋 Welcome back to *FreshBites Kitchen!* How can we help you today?",
+      ["📋 View Menu", "🚚 Delivery Info", "💰 Pricing"]
+    );
+    return res.sendStatus(200);
+  }
 
+  // ✅ Handle menu requests
+  if (msgBody.toLowerCase().includes("menu")) {
     await sendImageMessage(
       from,
-      "https://i.imgur.com/2TcH7d6_d.png",
+      "https://i.imgur.com/rIMIvng_d.jpeg?maxwidth=520&shape=thumb&fidelity=high",
       "📋 *FreshBites Kitchen Menu* — Here’s what’s cooking today!"
     );
 
@@ -294,10 +307,9 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  /* ===== ORDER DETECTION ===== */
+  // ✅ Detect orders
   const order = detectOrder(msgBody);
   if (order) {
-    memory.intent = "order";
     await sendMessage(
       from,
       `🧾 *Order Summary:*\n${order.quantity} × ${order.name}\n💵 Unit: ₦${order.unitPrice.toLocaleString()}\n💰 Total: ₦${order.totalPrice.toLocaleString()}\nWould you like *pickup* or *delivery*?`
@@ -306,23 +318,46 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  /* ===== GREETINGS ===== */
-  if (
-    ["hi", "hello", "hey", "good morning", "good afternoon", "good evening"].includes(
-      msgBody.toLowerCase()
-    )
-  ) {
-    await sendButtonMessage(
-      from,
-      "👋 Welcome back to *FreshBites Kitchen!* How can we help you today?",
-      ["📋 View Menu", "🚚 Delivery Info", "💰 Pricing"]
-    );
-    return res.sendStatus(200);
-  }
+// ✅ Continue AI chat (you can keep your existing OpenAI logic below)
+// proceed to the OpenAI handling below (do not end the request here so memory and msgBody remain available)
 
-  /* ===== AI CHAT LOGIC (CONTEXT AWARE) ===== */
+
+// ✅ Continue chat flow
+// (Your OpenAI conversation logic remains below unchanged)
+
+// AI Chat memory
   const systemPrompt = `
-You are *FreshBites Kitchen's WhatsApp Assistant*, a warm, conversational Nigerian restaurant bot.
+You are *FreshBites Kitchen Customer Support Bot*, the official WhatsApp assistant for FreshBites Restaurants — a fast, reliable, and affordable food delivery service in Nigeria. 
+Your job is to help customers with questions about: 
+- Menu options 
+- Delivery times 
+- Pricing 
+- Business hours 
+- Contact and support Details about the business: 
+- Small package: ₦2,500 
+- Medium package: ₦8,000 
+- Large package: ₦20,000 
+- Within city: 1–2 hours 
+- Nearby cities: 3–5 hours 
+- Nationwide: 24–48 hours 
+- Pickup: free for orders over ₦10,000 
+- Drop-off: free for orders over ₦15,000 
+- Tracking: available via WhatsApp or website 
+- Support hours: 8am–8pm daily 
+- Support hours on Sunday: 2pm–8pm 
+- Support hours on Monday: 9am–8pm 
+- Support hours on Tuesday: 8am–8pm 
+- Support hours on Wednesday: 8am–8pm 
+- Support hours on Thursday: 8am–8pm 
+- Support hours on Friday: 8am–8pm 
+- Support hours on Saturday: 10am–8pm 
+- Phone: 080-7237-8767 
+- Tone: friendly, professional, reassuring Always give helpful, accurate responses *specific to FreshBites Kitchen* and avoid generic AI phrases. If a customer asks something unrelated, politely bring the focus back to deliveries or menu options. 
+
+When users or customers mention ordering food, the system automatically detects and calculates totals. You only need to handle follow-ups (like confirming pickup/delivery, or giving cooking time). 
+
+Never invent new dishes or prices. Always use a friendly, conversational Nigerian tone. 
+
 You already know the customer's current intent is "${memory.intent || "general"}".
 If the user says "sure", "yes", or similar, respond based on that intent.
 If intent = "menu", show menu again or recommend best dishes.
@@ -343,10 +378,10 @@ Always be friendly and concise.`;
   });
 
   const reply = completion.choices[0].message.content.trim();
+  memory.chat.push({ role: "user", content: msgBody });
   memory.chat.push({ role: "assistant", content: reply });
 
   await sendMessage(from, reply);
-  await saveUserMemory(from, memory);
   res.sendStatus(200);
 });
 

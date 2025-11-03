@@ -170,6 +170,9 @@ async function sendImageMessage(to, imageUrlOrId, caption = "") {
   }
 }
 
+// 👇 add at the top of index.js (above app.post("/webhook", ...))
+const greetedUsers = new Map(); // Store users who have been greeted
+
 /* ---------- WEBHOOK ---------- */
 app.post("/webhook", async (req, res) => {
   const data = req.body;
@@ -188,32 +191,46 @@ app.post("/webhook", async (req, res) => {
 
   console.log(`📩 [${from}] ${msgBody}`);
 
-  // ✅ Initialize chat session memory if not exist
+  // ✅ Initialize session memory
   if (!req.session.memory) req.session.memory = {};
-  if (!req.session.memory[from])
-    req.session.memory[from] = { chat: [], intent: null, greeted: false };
+  if (!req.session.memory[from]) {
+    req.session.memory[from] = {
+      chat: [],
+      intent: null,
+      greeted: false,
+      lastGreetedAt: null,
+    };
+  }
 
   const memory = req.session.memory[from];
+  const now = Date.now();
 
-  // ✅ FIRST-TIME USER WELCOME IMAGES + MESSAGE
-  if (!memory.greeted) {
+  // ✅ Check if last greeting was over 24 hours ago
+  const shouldGreetAgain =
+    !memory.lastGreetedAt || now - memory.lastGreetedAt > 24 * 60 * 60 * 1000;
+
+  // ✅ FIRST-TIME USER OR 24-HR RESET
+  if (!memory.greeted || shouldGreetAgain) {
     memory.greeted = true;
+    memory.lastGreetedAt = now;
+
+    console.log(`👋 Sending welcome intro to new/returning user: ${from}`);
 
     // 1️⃣ Send brand logo
     await sendImageMessage(
       from,
-      "https://i.imgur.com/6qCXNkR_d.jpeg?maxwidth=520&shape=thumb&fidelity=high", // replace with your logo image URL
+      "https://i.imgur.com/6qCXNkR_d.jpeg?maxwidth=520&shape=thumb&fidelity=high",
       "🍽️ *Welcome to FreshBites Kitchen!* — Where every meal tells a delicious story."
     );
 
-    // 2️⃣ Send restaurant photo
+    // 2️⃣ Send restaurant image
     await sendImageMessage(
       from,
-      "https://i.imgur.com/XHLXHLR_d.jpeg?maxwidth=520&shape=thumb&fidelity=high", // replace with restaurant interior/food photo
+      "https://i.imgur.com/XHLXHLR_d.jpeg?maxwidth=520&shape=thumb&fidelity=high",
       "✨ *Experience the taste, aroma, and warmth of our kitchen* — freshly made for you ❤️"
     );
 
-    // 3️⃣ Send interactive intro buttons
+    // 3️⃣ Send main button message
     await sendButtonMessage(
       from,
       "👋 Hi there! It’s great to have you here at *FreshBites Kitchen*.\n\nI’m your friendly assistant. What would you like to do today?",
@@ -223,17 +240,21 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // Handle greetings
-  if (["hi", "hello", "hey", "greetings", "good morning", "good afternoon", "good evening"].includes(msgBody.toLowerCase())) {
-    await sendButtonMessage(from, "👋 Welcome back to *FreshBites Kitchen!* How can we help you today?", [
-      "📋 View Menu",
-      "🚚 Delivery Info",
-      "💰 Pricing",
-    ]);
+  // ✅ Handle greetings
+  if (
+    ["hi", "hello", "hey", "greetings", "good morning", "good afternoon", "good evening"].includes(
+      msgBody.toLowerCase()
+    )
+  ) {
+    await sendButtonMessage(
+      from,
+      "👋 Welcome back to *FreshBites Kitchen!* How can we help you today?",
+      ["📋 View Menu", "🚚 Delivery Info", "💰 Pricing"]
+    );
     return res.sendStatus(200);
   }
 
-  // Handle menu request
+  // ✅ Handle menu request
   if (msgBody.toLowerCase().includes("menu")) {
     await sendImageMessage(
       from,
@@ -242,10 +263,11 @@ app.post("/webhook", async (req, res) => {
     );
 
     const formattedMenu = Object.entries(MENU)
-      .map(([cat, items]) =>
-        `🍽️ *${cat.toUpperCase()}*\n${items
-          .map((i) => `• ${i.name} – ${i.price}\n  _${i.description}_`)
-          .join("\n")}`
+      .map(
+        ([cat, items]) =>
+          `🍽️ *${cat.toUpperCase()}*\n${items
+            .map((i) => `• ${i.name} – ${i.price}\n  _${i.description}_`)
+            .join("\n")}`
       )
       .join("\n\n");
 
@@ -253,7 +275,7 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // Detect order
+  // ✅ Detect orders
   const order = detectOrder(msgBody);
   if (order) {
     await sendMessage(
@@ -263,7 +285,10 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  // AI Chat memory
+// ✅ Continue chat flow
+// (Your OpenAI conversation logic remains below unchanged)
+
+// AI Chat memory
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [

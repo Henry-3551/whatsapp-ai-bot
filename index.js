@@ -45,10 +45,6 @@ const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 /* ---------- MENU ---------- */
 const MENU = {
-  "Appetizers": [
-    { name: "Spring Rolls", description: "Crispy rolls filled with vegetables", price: "₦1,200" },
-    { name: "Chicken Wings", description: "Spicy chicken wings served with dip", price: "₦1,500" },
-  ],
   "🍽 BREAKFAST": [
     { name: "Yam & Egg Sauce", description: "Boiled or fried yam served with spicy tomato & egg sauce", price: "₦1,800" },
     { name: "Plantain & Beans (Ewa Agoyin)", description: "Sweet fried plantain with spicy mashed beans", price: "₦1,500" },
@@ -83,6 +79,16 @@ const MENU = {
     { name: "Okra Soup & Eba", description: "Fresh okra soup with fish or beef", price: "₦2,500" },
     { name: "Pepper Soup (Goat / Catfish)", description: "Spicy broth with your choice of meat or fish", price: "₦2,500 / ₦3,000" },
     { name: "Native Jollof (Palm Oil Rice)", description: "Local-style rice with smoked fish, crayfish, and traditional seasonings", price: "₦2,600" },
+  ],
+  "🍰 DESSERTS": [
+    { name: "Fruit Salad", description: "Mixed tropical fruits", price: "₦1,200" },
+    { name: "Parfait", description: "Yogurt layered with granola and fruits", price: "₦2,000" },
+    { name: "Ice Cream (Vanilla / Chocolate)", description: "Scoop or cup", price: "₦1,500" },
+  ],
+  "💡 Special Combos": [
+    { name: "FreshBites Special", Includes: "Jollof Rice + Chicken + Dodo + Drink", price: "₦3,000" },
+    { name: "Naija Combo", Includes: "Pounded Yam + Egusi + Goat Meat + Water", price: "₦3,200" },
+    { name: "Quick Lunch Pack", Includes: "Fried Rice + Plantain + Beef", price: "₦2,500" },
   ],
 };
 

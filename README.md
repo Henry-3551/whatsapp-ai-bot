@@ -1,2 +1,2 @@
 # whatsapp-ai-bot
-FoodBites Delivery Bot
+FredhBites Customer Service Bot

@@ -1,2 +1,2 @@
 # whatsapp-ai-bot
-FredhBites Customer Service Bot
+FreshBites Customer Service Bot

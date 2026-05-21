@@ -381,7 +381,11 @@ app.post("/webhook", async (req, res) => {
     lowerMsg.includes("agent") ||
     lowerMsg.includes("staff") ||
     lowerMsg.includes("representative") ||
-    lowerMsg.includes("real person")
+    lowerMsg.includes("real person") ||
+    lowerMsg.includes("customer care") ||
+    lowerMsg.includes("customer service") ||
+    lowerMsg.includes("talk to someone") ||
+    lowerMsg.includes("talk to a person")
   ) {
     await sendMessage(from, CONTACT_TEXT);
     return res.sendStatus(200);

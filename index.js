@@ -363,6 +363,21 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
   }
 
+  // ✅ Handle delivery/pricing/support without LLM
+  const lowerMsg = msgBody.toLowerCase();
+  if (lowerMsg.includes("delivery") || lowerMsg.includes("deliver")) {
+    await sendMessage(from, DELIVERY_TEXT);
+    return res.sendStatus(200);
+  }
+  if (lowerMsg.includes("price") || lowerMsg.includes("pricing")) {
+    await sendMessage(from, PRICING_TEXT);
+    return res.sendStatus(200);
+  }
+  if (lowerMsg.includes("support") || lowerMsg.includes("contact") || lowerMsg.includes("help")) {
+    await sendMessage(from, CONTACT_TEXT);
+    return res.sendStatus(200);
+  }
+
   // ✅ Detect orders
   const order = detectOrder(msgBody);
   if (order) {
@@ -461,13 +476,22 @@ Tone: friendly, professional, reassuring, Nigerian conversational.`;
     ...memory.chat.slice(-6), // keep last few messages only
   ];
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: conversation,
-    temperature: 0.2,
-  });
-
-  const rawReply = completion.choices[0].message.content.trim();
+  let rawReply = null;
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: conversation,
+      temperature: 0.2,
+    });
+    rawReply = completion.choices[0].message.content.trim();
+  } catch (err) {
+    console.error("❌ OpenAI error:", err?.message || err);
+    await sendMessage(
+      from,
+      "Sorry, I’m having trouble right now. Please ask about delivery, pricing, or support."
+    );
+    return res.sendStatus(200);
+  }
   let replyText = null;
   let replyType = null;
   try {

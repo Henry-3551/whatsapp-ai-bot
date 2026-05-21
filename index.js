@@ -5,8 +5,9 @@ import Redis from "ioredis";
 import { RedisStore } from "connect-redis"; // <-- ✅ use named import
 import axios from "axios";
 import dotenv from "dotenv";
+import crypto from "crypto";
 import OpenAI from "openai";
-import fs from "fs";
+import { MENU, detectOrder, parseVariantsFromName } from "./orderLogic.js";
 
 dotenv.config();
 
@@ -15,17 +16,29 @@ const redisClient = new Redis(process.env.REDIS_URL);
 
 // --- Express app setup ---
 const app = express();
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true }));
 
 // --- Sessions using connect-redis v8 syntax ---
+const SESSION_SECRET = process.env.SESSION_SECRET;
+if (!SESSION_SECRET) {
+  console.error("❌ Missing SESSION_SECRET in environment.");
+  process.exit(1);
+}
+
 app.use(
   session({
     store: new RedisStore({
       client: redisClient,
       prefix: "sess:", // optional
     }),
-    secret: process.env.SESSION_SECRET || "henrify_secret_key_2025",
+    secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: { maxAge: 1000 * 60 * 60 }, // 1 hour/ 60 minutes
@@ -40,82 +53,19 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const WHATSAPP_APP_SECRET = process.env.WHATSAPP_APP_SECRET;
 
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-/* ---------- MENU ---------- */
-const MENU = {
-  "🍽 BREAKFAST": [
-    { name: "Yam & Egg Sauce", description: "Boiled or fried yam served with spicy tomato & egg sauce", price: "₦1,800" },
-    { name: "Plantain & Beans (Ewa Agoyin)", description: "Sweet fried plantain with spicy mashed beans", price: "₦1,500" },
-    { name: "Akara & Pap", description: "Fried bean cakes served with custard or pap (ogi)", price: "₦1,200" },
-    { name: "Moi Moi & Bread", description: "Steamed bean pudding served with soft bread", price: "₦1,300" },
-    { name: "Noodles & Fried Egg", description: "Indomie-style noodles with vegetables & fried egg", price: "₦1,500" },
-  ],
-  "🍢 SNACKS & LIGHT MEALS": [
-    { name: "Meat Pie", description: "Flaky pastry stuffed with minced meat & vegetables", price: "₦800" },
-    { name: "Sausage Roll", description: "Pastry roll filled with sausage meat", price: "₦700" },
-    { name: "Puff-Puff (5 pcs)", description: "Sweet fried dough balls", price: "₦600" },
-    { name: "Chin Chin (Small Pack)", description: "Crunchy fried dough snack", price: "₦500" },
-    { name: "Suya (Beef / Chicken)", description: "Spicy skewered meat served with onions and peppers", price: "₦1,000-₦2,000" },
-  ],
-  "🥤 DRINKS & BEVERAGES": [
-    { name: "Soft Drinks", Size: "50cl", price: "₦500" },
-    { name: "Bottled Water", Size: "75cl", price: "₦300" },
-    { name: "Zobo Drink", Size: "cup", price: "₦600" },
-    { name: "Chapman", Size: "Glass", price: "₦1,200" },
-    { name: "Palm Wine", Size: "Calabash", price: "₦1,000" },
-    { name: "Smoothie", Size: "Glass", price: "₦1,800" },
-    { name: "Beer / Malt / Energy Drink", Size: "Bottle", price: "₦1,200–₦1,800" },
-  ],
-  "🍛 MAIN COURSES (LUNCH & DINNER)": [
-    { name: "Jollof Rice & Chicken", description: "Classic Nigerian jollof with fried or grilled chicken", price: "₦2,500" },
-    { name: "Fried Rice & Dodo", description: "Fried rice with plantain and peppered chicken or beef", price: "₦2,700" },
-    { name: "Ofada Rice & Ayamase Sauce", description: "Local rice with spicy green ofada stew and assorted meat", price: "₦3,000" },
-    { name: "Egusi Soup & Pounded Yam", description: "Melon seed soup with beef, fish, and vegetable", price: "₦2,800" },
-    { name: "Efo Riro & Amala/Fufu", description: "Rich spinach stew with assorted meat", price: "₦2,500" },
-    { name: "Bitterleaf Soup & Fufu", description: "Traditional onugbu soup with meat and stockfish", price: "₦2,700" },
-    { name: "Oha Soup & Semovita", description: "Eastern Nigerian delicacy with oha leaves and proteins", price: "₦2,800" },
-    { name: "Okra Soup & Eba", description: "Fresh okra soup with fish or beef", price: "₦2,500" },
-    { name: "Pepper Soup (Goat / Catfish)", description: "Spicy broth with your choice of meat or fish", price: "₦2,500 / ₦3,000" },
-    { name: "Native Jollof (Palm Oil Rice)", description: "Local-style rice with smoked fish, crayfish, and traditional seasonings", price: "₦2,600" },
-  ],
-  "🍰 DESSERTS": [
-    { name: "Fruit Salad", description: "Mixed tropical fruits", price: "₦1,200" },
-    { name: "Parfait", description: "Yogurt layered with granola and fruits", price: "₦2,000" },
-    { name: "Ice Cream (Vanilla / Chocolate)", description: "Scoop or cup", price: "₦1,500" },
-  ],
-  "💡 Special Combos": [
-    { name: "FreshBites Special", Includes: "Jollof Rice + Chicken + Dodo + Drink", price: "₦3,000" },
-    { name: "Naija Combo", Includes: "Pounded Yam + Egusi + Goat Meat + Water", price: "₦3,200" },
-    { name: "Quick Lunch Pack", Includes: "Fried Rice + Plantain + Beef", price: "₦2,500" },
-  ],
-};
+const PRICING_TEXT =
+  "💰 *Pricing Packages:*\n- Small: ₦2,500\n- Medium: ₦8,000\n- Large: ₦20,000";
+const DELIVERY_TEXT =
+  "🚚 *Delivery Times:*\n- Within city: 1–2 hours\n- Nearby cities: 3–5 hours\n- Nationwide: 24–48 hours\n\n✅ Pickup: free for orders over ₦10,000\n✅ Drop-off: free for orders over ₦15,000\n📍 Tracking: available via WhatsApp or website";
+const CONTACT_TEXT =
+  "📞 *Support:* 080-7237-8767\n🕒 *Support hours:* 8am–8pm daily (Sun 2pm–8pm, Mon 9am–8pm, Sat 10am–8pm)";
 
-/* ---------- HELPERS ---------- */
-function detectOrder(message) {
-  if (!message || typeof message !== "string") return null;
-  const msg = message.toLowerCase();
-  const orderMatch = msg.match(/(\d+)?\s*(.*)/);
-  if (!orderMatch) return null;
-
-  const quantity = parseInt(orderMatch[1]) || 1;
-  const mealName = orderMatch[2]?.trim();
-
-  for (const category of Object.values(MENU)) {
-    for (const item of category) {
-      if (mealName.includes(item.name.toLowerCase().split(" ")[0])) {
-        const numericPrice = parseInt(item.price.replace(/[^\d]/g, ""));
-        return {
-          name: item.name,
-          quantity,
-          unitPrice: numericPrice,
-          totalPrice: numericPrice * quantity,
-        };
-      }
-    }
-  }
-  return null;
+async function sendPickupDeliveryPrompt(to, text) {
+  await sendButtonMessage(to, text, ["🛍️ Pickup", "🚚 Delivery"]);
 }
 
 async function sendMessage(to, text) {
@@ -203,10 +153,33 @@ async function sendImageMessage(to, imageUrlOrId, caption = "") {
   }
 }
 
+function containsMenuReference(text) {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  for (const category of Object.values(MENU)) {
+    for (const item of category) {
+      if (lower.includes(item.name.toLowerCase())) return true;
+      if (Array.isArray(item.variants)) {
+        for (const variant of item.variants) {
+          if (lower.includes(variant.label.toLowerCase())) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function isPriceLike(text) {
+  if (!text) return false;
+  return /₦|\b\d{1,3}(?:,\d{3})+\b/.test(text);
+}
+
 /* ---------- USER MEMORY HELPERS ---------- */
 async function getUserMemory(userId) {
   const data = await redisClient.get(`user:${userId}`);
-  return data ? JSON.parse(data) : { greeted: false, chat: [], intent: null, lastGreetedAt: null };
+  return data
+    ? JSON.parse(data)
+    : { greeted: false, chat: [], intent: null, lastGreetedAt: null, pendingOrder: null };
 }
 
 async function saveUserMemory(userId, memory) {
@@ -214,11 +187,27 @@ async function saveUserMemory(userId, memory) {
 }
 
 
-// 👇 add at the top of index.js (above app.post("/webhook", ...))
-const greetedUsers = new Map(); // Store users who have been greeted
-
 /* ---------- WEBHOOK ---------- */
 app.post("/webhook", async (req, res) => {
+  if (WHATSAPP_APP_SECRET) {
+    const signature = req.get("x-hub-signature-256") || "";
+    const expected =
+      "sha256=" +
+      crypto
+        .createHmac("sha256", WHATSAPP_APP_SECRET)
+        .update(req.rawBody || Buffer.from(""))
+        .digest("hex");
+
+    const isValid =
+      signature.length === expected.length &&
+      crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+
+    if (!isValid) {
+      console.warn("⚠️ Invalid webhook signature");
+      return res.sendStatus(403);
+    }
+  }
+
   const data = req.body;
   const message = data.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
   const from = message?.from;
@@ -245,7 +234,8 @@ app.post("/webhook", async (req, res) => {
     memory.greeted = true;
     memory.lastGreetedAt = now;
     memory.chat = [];
-    memory.intent = "intro"
+    memory.intent = "intro";
+    memory.pendingOrder = null;
 
     // 1️⃣ Send brand logo
     await sendImageMessage(
@@ -286,6 +276,69 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
   }
 
+  // ✅ Handle pending variant selection for ranged prices
+  if (memory.intent === "order_variant" && memory.pendingOrder) {
+    const { name, quantity, variantPrices, priceRange } = memory.pendingOrder;
+    const lower = msgBody.toLowerCase();
+    const picked = variantPrices
+      ? Object.entries(variantPrices).find(([variant]) =>
+          lower.includes(variant.toLowerCase())
+        )
+      : null;
+
+    if (picked) {
+      const [variant, unitPrice] = picked;
+      const totalPrice = unitPrice * quantity;
+
+      await sendPickupDeliveryPrompt(
+        from,
+        `🧾 *Order Summary:*\n${quantity} × ${name} (${variant})\n💵 Unit: ₦${unitPrice.toLocaleString()}\n💰 Total: ₦${totalPrice.toLocaleString()}`
+      );
+
+      memory.intent = "order";
+      memory.pendingOrder = null;
+      await saveUserMemory(from, memory);
+      return res.sendStatus(200);
+    }
+
+    if (!variantPrices && priceRange) {
+      const priceMatch = lower.match(/(\d[\d,]*)/);
+      const chosen = priceMatch
+        ? parseInt(priceMatch[1].replace(/,/g, ""), 10)
+        : NaN;
+
+      if (Number.isFinite(chosen) && chosen >= priceRange.min && chosen <= priceRange.max) {
+        const totalPrice = chosen * quantity;
+        await sendPickupDeliveryPrompt(
+          from,
+          `🧾 *Order Summary:*\n${quantity} × ${name}\n💵 Unit: ₦${chosen.toLocaleString()}\n💰 Total: ₦${totalPrice.toLocaleString()}`
+        );
+
+        memory.intent = "order";
+        memory.pendingOrder = null;
+        await saveUserMemory(from, memory);
+        return res.sendStatus(200);
+      }
+    }
+
+    if (variantPrices) {
+      const options = Object.entries(variantPrices).map(
+        ([variant, price]) => `${variant} (₦${price.toLocaleString()})`
+      );
+      await sendButtonMessage(
+        from,
+        "Please choose one option so I can confirm the price:",
+        options.slice(0, 3)
+      );
+    } else if (priceRange) {
+      await sendMessage(
+        from,
+        `Please reply with the exact price you want (₦${priceRange.min.toLocaleString()}–₦${priceRange.max.toLocaleString()}).`
+      );
+    }
+    return res.sendStatus(200);
+  }
+
   // ✅ Handle menu requests
   if (msgBody.toLowerCase().includes("menu")) {
     await sendImageMessage(
@@ -297,7 +350,10 @@ app.post("/webhook", async (req, res) => {
     const formattedMenu = Object.entries(MENU)
       .map(([cat, items]) =>
         `🍽️ *${cat.toUpperCase()}*\n${items
-          .map((i) => `• ${i.name} – ${i.price}\n  _${i.description}_`)
+          .map((i) => {
+            const detail = i.description || (i.Size ? `Size: ${i.Size}` : "");
+            return `• ${i.name} – ${i.price}${detail ? `\n  _${detail}_` : ""}`;
+          })
           .join("\n")}`
       )
       .join("\n\n");
@@ -310,9 +366,68 @@ app.post("/webhook", async (req, res) => {
   // ✅ Detect orders
   const order = detectOrder(msgBody);
   if (order) {
-    await sendMessage(
+    if (order.variantPrices) {
+      memory.intent = "order_variant";
+      memory.pendingOrder = {
+        name: order.name,
+        quantity: order.quantity,
+        variantPrices: order.variantPrices,
+      };
+
+      await saveUserMemory(from, memory);
+      await sendButtonMessage(
+        from,
+        "Which option would you like?",
+        Object.entries(order.variantPrices).map(
+          ([variant, price]) => `${variant} (₦${price.toLocaleString()})`
+        )
+      );
+      return res.sendStatus(200);
+    }
+
+    if (order.priceRange) {
+      const variants = parseVariantsFromName(order.name);
+      if (variants.length === 2) {
+        const variantPrices = {
+          [variants[0]]: order.priceRange.min,
+          [variants[1]]: order.priceRange.max,
+        };
+        memory.intent = "order_variant";
+        memory.pendingOrder = {
+          name: order.name,
+          quantity: order.quantity,
+          variantPrices,
+        };
+
+        await saveUserMemory(from, memory);
+        await sendButtonMessage(
+          from,
+          "Which option would you like?",
+          Object.entries(variantPrices).map(
+            ([variant, price]) => `${variant} (₦${price.toLocaleString()})`
+          )
+        );
+        return res.sendStatus(200);
+      }
+
+      memory.intent = "order_variant";
+      memory.pendingOrder = {
+        name: order.name,
+        quantity: order.quantity,
+        priceRange: order.priceRange,
+      };
+
+      await saveUserMemory(from, memory);
+      await sendMessage(
+        from,
+        `Please reply with the exact price you want (₦${order.priceRange.min.toLocaleString()}–₦${order.priceRange.max.toLocaleString()}).`
+      );
+      return res.sendStatus(200);
+    }
+
+    await sendPickupDeliveryPrompt(
       from,
-      `🧾 *Order Summary:*\n${order.quantity} × ${order.name}\n💵 Unit: ₦${order.unitPrice.toLocaleString()}\n💰 Total: ₦${order.totalPrice.toLocaleString()}\nWould you like *pickup* or *delivery*?`
+      `🧾 *Order Summary:*\n${order.quantity} × ${order.name}\n💵 Unit: ₦${order.unitPrice.toLocaleString()}\n💰 Total: ₦${order.totalPrice.toLocaleString()}`
     );
     await saveUserMemory(from, memory);
     return res.sendStatus(200);
@@ -327,44 +442,18 @@ app.post("/webhook", async (req, res) => {
 
 // AI Chat memory
   const systemPrompt = `
-You are *FreshBites Kitchen Customer Support Bot*, the official WhatsApp assistant for FreshBites Restaurants — a fast, reliable, and affordable food delivery service in Nigeria. 
-Your job is to help customers with questions about: 
-- Menu options 
-- Delivery times 
-- Pricing 
-- Business hours 
-- Contact and support Details about the business: 
-- Small package: ₦2,500 
-- Medium package: ₦8,000 
-- Large package: ₦20,000 
-- Within city: 1–2 hours 
-- Nearby cities: 3–5 hours 
-- Nationwide: 24–48 hours 
-- Pickup: free for orders over ₦10,000 
-- Drop-off: free for orders over ₦15,000 
-- Tracking: available via WhatsApp or website 
-- Support hours: 8am–8pm daily 
-- Support hours on Sunday: 2pm–8pm 
-- Support hours on Monday: 9am–8pm 
-- Support hours on Tuesday: 8am–8pm 
-- Support hours on Wednesday: 8am–8pm 
-- Support hours on Thursday: 8am–8pm 
-- Support hours on Friday: 8am–8pm 
-- Support hours on Saturday: 10am–8pm 
-- Phone: 080-7237-8767 
-- Tone: friendly, professional, reassuring Always give helpful, accurate responses *specific to FreshBites Kitchen* and avoid generic AI phrases. If a customer asks something unrelated, politely bring the focus back to deliveries or menu options. 
+You are *FreshBites Kitchen Customer Support Bot*, the official WhatsApp assistant for FreshBites Restaurants — a fast, reliable, and affordable food delivery service in Nigeria.
+Your job is to answer only general FAQs about delivery times, pricing packages, business hours, and contact.
 
-When users or customers mention ordering food, the system automatically detects and calculates totals. You only need to handle follow-ups (like confirming pickup/delivery, or giving cooking time). 
+Never invent dishes, prices, or menu items. If a user asks about menu or prices, respond with a short prompt that directs them to type "menu" or choose a pricing package.
+When a user is ordering, the system handles totals. You only guide pickup/delivery and general support info.
 
-Never invent new dishes or prices. Always use a friendly, conversational Nigerian tone. 
+Return ONLY valid JSON (no markdown, no extra text) in this schema:
+{"type":"faq|delivery_info|pricing_info|menu_request|clarify|handoff","text":"short reply"}
 
 You already know the customer's current intent is "${memory.intent || "general"}".
-If the user says "sure", "yes", or similar, respond based on that intent.
-If intent = "menu", show menu again or recommend best dishes.
-If intent = "order", guide them to confirm pickup or delivery.
-If intent = "intro", guide them to menu or delivery info.
-If unclear, politely clarify.
-Always be friendly and concise.`;
+If unclear, ask a concise clarification.
+Tone: friendly, professional, reassuring, Nigerian conversational.`;
 
   memory.chat.push({ role: "user", content: msgBody });
   const conversation = [
@@ -375,13 +464,46 @@ Always be friendly and concise.`;
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     messages: conversation,
+    temperature: 0.2,
   });
 
-  const reply = completion.choices[0].message.content.trim();
-  memory.chat.push({ role: "user", content: msgBody });
-  memory.chat.push({ role: "assistant", content: reply });
+  const rawReply = completion.choices[0].message.content.trim();
+  let replyText = null;
+  let replyType = null;
+  try {
+    const parsed = JSON.parse(rawReply);
+    if (parsed && typeof parsed.type === "string" && typeof parsed.text === "string") {
+      replyType = parsed.type;
+      replyText = parsed.text.trim();
+    }
+  } catch (err) {
+    replyType = "clarify";
+    replyText = "Sorry, I didn’t catch that. Are you asking about delivery, pricing, or support?";
+  }
 
-  await sendMessage(from, reply);
+  if (!replyText) {
+    replyType = "clarify";
+    replyText = "Sorry, I didn’t catch that. Are you asking about delivery, pricing, or support?";
+  }
+
+  const isSafeType = ["pricing_info", "delivery_info", "handoff", "menu_request"].includes(
+    replyType
+  );
+
+  if (replyType === "pricing_info") replyText = PRICING_TEXT;
+  if (replyType === "delivery_info") replyText = DELIVERY_TEXT;
+  if (replyType === "handoff") replyText = CONTACT_TEXT;
+  if (replyType === "menu_request") {
+    replyText = "Please type *menu* or tap *View Menu* to see today’s items.";
+  }
+
+  if (!isSafeType && (containsMenuReference(replyText) || isPriceLike(replyText))) {
+    replyText = "Please type *menu* or ask about delivery/support.";
+  }
+
+  memory.chat.push({ role: "assistant", content: replyText });
+
+  await sendMessage(from, replyText);
   res.sendStatus(200);
 });
 

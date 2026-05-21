@@ -373,7 +373,16 @@ app.post("/webhook", async (req, res) => {
     await sendMessage(from, PRICING_TEXT);
     return res.sendStatus(200);
   }
-  if (lowerMsg.includes("support") || lowerMsg.includes("contact") || lowerMsg.includes("help")) {
+  if (
+    lowerMsg.includes("support") ||
+    lowerMsg.includes("contact") ||
+    lowerMsg.includes("help") ||
+    lowerMsg.includes("human") ||
+    lowerMsg.includes("agent") ||
+    lowerMsg.includes("staff") ||
+    lowerMsg.includes("representative") ||
+    lowerMsg.includes("real person")
+  ) {
     await sendMessage(from, CONTACT_TEXT);
     return res.sendStatus(200);
   }
